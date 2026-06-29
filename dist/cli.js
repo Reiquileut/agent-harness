@@ -273,10 +273,12 @@ var McpSchema = z.discriminatedUnion("transport", [McpHttpSchema, McpStdioSchema
 var SkillSchema = z.object({
   id: z.string().min(1),
   label: z.string().optional(),
-  /** owner/repo, URL, or local dir passed to `npx skills add`. */
+  /** owner/repo, URL, local dir, or "local" (bundled in assets/skills/<id>/). */
   source: z.string().min(1),
   /** the specific skill name inside that source. */
-  skill: z.string().min(1)
+  skill: z.string().min(1),
+  /** Restrict this skill to specific agents (omit = all agents). */
+  agents: z.array(z.string()).optional()
 });
 var PluginSchema = z.object({
   id: z.string().min(1),
@@ -346,8 +348,14 @@ ${details}`);
 function looksLikePlaceholder(value) {
   return /<[^>]+>/.test(value);
 }
+function appliesToAgent(agents, agentId) {
+  return !agents || agents.includes(agentId);
+}
 function mcpAppliesTo(mcp, agentId) {
-  return !mcp.agents || mcp.agents.includes(agentId);
+  return appliesToAgent(mcp.agents, agentId);
+}
+function skillAppliesTo(skill, agentId) {
+  return appliesToAgent(skill.agents, agentId);
 }
 
 // src/core/plugins.ts
@@ -858,7 +866,8 @@ async function promptInitSelection(catalog) {
   if (catalog.skills.length) {
     options["Skills"] = catalog.skills.map((s) => ({
       value: `skill:${s.id}`,
-      label: s.label ?? s.skill
+      label: s.label ?? s.skill,
+      hint: s.agents ? `${s.agents.join("/")} only` : void 0
     }));
   }
   if (catalog.plugins.length) {
@@ -1022,7 +1031,7 @@ async function configureAgent(agent, sel) {
     log.plain(`   ${pc5.dim("\xB7 skip MCPs \u2014 unsupported")}`);
   }
   if (agent.supports.skills) {
-    for (const s of sel.skills) {
+    for (const s of sel.skills.filter((skill) => skillAppliesTo(skill, agent.id))) {
       if (isLocalSkill(s)) {
         await runActions(await buildLocalSkillCopyActions(agent, s, "user"));
         continue;

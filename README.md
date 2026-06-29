@@ -136,8 +136,12 @@ touching code. MCP entries are transport-neutral:
 ```
 
 - **MCP** `env`: names of env vars to remind you about (values never written).
-- **Skill** `source`: `owner/repo`, a URL, or a local dir; `skill` is the name inside it.
+- **MCP/Skill** `agents`: optional allowlist (e.g. `["claude-code"]`) — omit for all agents.
+- **Skill** `source`: `owner/repo`, a URL, or `"local"` (bundled under `assets/skills/<id>/`).
 - **Plugin** `name`: the marketplace's declared name used in `<plugin>@<name>` (defaults to the repo's last path segment).
+
+Bundled skills under `assets/skills/` keep their own licenses (e.g. `impeccable` is
+Apache-2.0); their `SKILL.md` carries the license declaration.
 
 The shipped catalog uses obvious placeholders like `<obsidian-mcp-package>` and
 `<skills-repo>` — replace them with your real values. The CLI warns when it sees

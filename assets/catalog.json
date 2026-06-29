@@ -68,9 +68,10 @@
     },
     {
       "id": "impeccable",
-      "label": "Impeccable — frontend design/UX system (v3.5.0)",
+      "label": "Impeccable — frontend design/UX system (v3.5.0, Apache-2.0)",
       "source": "local",
-      "skill": "impeccable"
+      "skill": "impeccable",
+      "agents": ["claude-code"]
     }
   ],
   "plugins": [

@@ -22,6 +22,7 @@ import {
   loadCatalog,
   looksLikePlaceholder,
   mcpAppliesTo,
+  skillAppliesTo,
 } from '../core/catalog';
 import { isDryRun, log } from '../core/fsx';
 import {
@@ -151,7 +152,7 @@ async function configureAgent(agent: AgentInfo, sel: Selection): Promise<void> {
 
   // Skills (delegate to npx skills; direct-copy fallback on failure)
   if (agent.supports.skills) {
-    for (const s of sel.skills) {
+    for (const s of sel.skills.filter((skill) => skillAppliesTo(skill, agent.id))) {
       if (isLocalSkill(s)) {
         await runActions(await buildLocalSkillCopyActions(agent, s, 'user'));
         continue;
