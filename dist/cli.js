@@ -617,6 +617,9 @@ function requiredEnvVars(entries) {
 // src/core/skills.ts
 import { promises as fs2 } from "fs";
 import path5 from "path";
+function isLocalSkill(skill) {
+  return skill.source === "local";
+}
 function buildSkillAction(agent, skill, scope) {
   const label = `Skill ${skill.skill} \u2192 ${agent.label}`;
   const args = [
@@ -649,8 +652,8 @@ async function listFilesRecursive(dir) {
   }
   return out;
 }
-async function buildSkillFallbackActions(agent, skill, scope) {
-  const label = `Skill ${skill.skill} \u2192 ${agent.label} (fallback)`;
+async function buildLocalSkillCopyActions(agent, skill, scope) {
+  const label = `Skill ${skill.skill} \u2192 ${agent.label} (local copy)`;
   const srcDir = localSkillDir(skill);
   if (!pathExists(srcDir)) {
     return [
@@ -658,7 +661,7 @@ async function buildSkillFallbackActions(agent, skill, scope) {
         kind: "note",
         level: "warn",
         label,
-        message: `\`npx skills\` failed and no local copy at assets/skills/${skill.id}/ \u2014 install this skill manually.`
+        message: `No local copy at assets/skills/${skill.id}/ \u2014 install this skill manually.`
       }
     ];
   }
@@ -1002,10 +1005,14 @@ async function configureAgent(agent, sel) {
   }
   if (agent.supports.skills) {
     for (const s of sel.skills) {
+      if (isLocalSkill(s)) {
+        await runActions(await buildLocalSkillCopyActions(agent, s, "user"));
+        continue;
+      }
       const res = await runAction(buildSkillAction(agent, s, "user"));
       if (res.status === "failed" && hasLocalSkill(s)) {
         log.plain(`   ${pc5.dim("\xB7 trying local fallback\u2026")}`);
-        await runActions(await buildSkillFallbackActions(agent, s, "user"));
+        await runActions(await buildLocalSkillCopyActions(agent, s, "user"));
       }
     }
   } else if (sel.skills.length) {

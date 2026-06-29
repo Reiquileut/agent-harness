@@ -29,9 +29,10 @@ import {
 } from '../core/plugins';
 import { buildUserMcpAction, requiredEnvVars } from '../core/mcp';
 import {
+  buildLocalSkillCopyActions,
   buildSkillAction,
-  buildSkillFallbackActions,
   hasLocalSkill,
+  isLocalSkill,
 } from '../core/skills';
 import { promptInitSelection } from '../ui/prompts';
 
@@ -145,10 +146,14 @@ async function configureAgent(agent: AgentInfo, sel: Selection): Promise<void> {
   // Skills (delegate to npx skills; direct-copy fallback on failure)
   if (agent.supports.skills) {
     for (const s of sel.skills) {
+      if (isLocalSkill(s)) {
+        await runActions(await buildLocalSkillCopyActions(agent, s, 'user'));
+        continue;
+      }
       const res = await runAction(buildSkillAction(agent, s, 'user'));
       if (res.status === 'failed' && hasLocalSkill(s)) {
         log.plain(`   ${pc.dim('· trying local fallback…')}`);
-        await runActions(await buildSkillFallbackActions(agent, s, 'user'));
+        await runActions(await buildLocalSkillCopyActions(agent, s, 'user'));
       }
     }
   } else if (sel.skills.length) {
