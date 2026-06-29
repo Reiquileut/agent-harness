@@ -126,6 +126,17 @@ async function claudeHasMcp(id: string): Promise<boolean> {
 }
 
 async function buildClaudeUserMcp(m: McpEntry, label: string): Promise<Action> {
+  // User-scope Claude MCP goes through the `claude` CLI. If Claude Code isn't
+  // installed on this machine, skip gracefully instead of erroring — install
+  // Claude and re-run (or it picks up project .mcp.json from `scaffold`).
+  if (!commandOnPath('claude')) {
+    return {
+      kind: 'note',
+      level: 'warn',
+      label,
+      message: `Claude Code not on PATH — skipped ${m.id}. Install Claude, then re-run.`,
+    };
+  }
   if (!isForce() && (await claudeHasMcp(m.id))) {
     return { kind: 'skip', label, reason: 'already configured (claude mcp)' };
   }
