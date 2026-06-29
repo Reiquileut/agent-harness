@@ -17,7 +17,7 @@ program
   .version('0.1.0');
 
 program
-  .command('init')
+  .command('init', { isDefault: true })
   .description('Configure agents on this machine (user-scope MCPs, skills, plugins), then print the login block.')
   .option('-a, --agent <id>', 'target agent (repeatable)', collect, [])
   .option('--mcp <id>', 'MCP to install (repeatable)', collect, [])
