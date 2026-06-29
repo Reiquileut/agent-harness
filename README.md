@@ -9,6 +9,31 @@
 Auth is **not** automated. Logins are OAuth/browser flows that differ per agent,
 so the tool prepares everything and **prints the exact login block** at the end.
 
+## Architecture
+
+```
+              assets/catalog.json   ← one neutral, data-driven file you edit
+                       │             (core/catalog.ts: load + zod-validate)
+                       ▼
+        ┌──────────────────────────────┐
+        │  init (machine)  ·  scaffold (repo)   │  src/cli.ts (commander; init is default)
+        └──────────────────────────────┘
+                       │ detect installed agents (core/agents.ts)
+                       ▼
+   neutral MCP  ─► translate per agent (core/mcp.ts) ─► claude CLI / TOML / JSON merge
+   skill        ─► npx skills  ·  local copy (core/skills.ts)
+   plugin       ─► claude marketplace + install (core/plugins.ts)
+   template     ─► copy + .gitignore merge (core/templates.ts)
+                       │ every change is an Action, applied atomically (core/actions.ts)
+                       ▼ --dry-run previews and writes nothing · re-runs are idempotent
+   Claude Code              Codex                  OpenCode
+   ~/.claude.json (MCP)     ~/.codex/config.toml   ~/.config/opencode/opencode.json
+   ~/.claude/skills         ~/.agents/skills       ~/.config/opencode/skills
+                       │
+                       ▼
+              prints the manual login block (auth is never automated)
+```
+
 ---
 
 ## Install & run
@@ -29,17 +54,15 @@ pnpm dlx github:reiquileut/agent-harness scaffold
 The repo ships a **committed, prebuilt `dist/`**, so nothing builds at install time —
 it works regardless of your npm/pnpm version.
 
-**Or clone and build:**
+**Or clone and develop:**
 
 ```bash
 pnpm install
-pnpm build
+pnpm build          # tsup → dist/cli.js   (also: pnpm typecheck)
 node dist/cli.js init
 ```
 
-> Future: a scoped npm package `@r2t/agent-harness` (`pnpm dlx @r2t/agent-harness init`).
-
-Requires **Node ≥ 20**.
+> Future: a scoped npm package `@r2t/agent-harness` (`pnpm dlx @r2t/agent-harness`).
 
 ---
 
@@ -47,22 +70,23 @@ Requires **Node ≥ 20**.
 
 ### `agent-harness init` — machine level
 
-Configures agents globally: user-scope MCP servers, skills, and plugins.
+Configures agents globally: user-scope MCP servers, skills, and plugins, then
+prints the auth block.
 
 Interactive (default): detects installed agents, lets you multiselect agents +
-catalog items, confirms, installs, then prints the auth block.
+catalog items, confirms, installs.
 
 Non-interactive (CI / scripted):
 
 ```bash
 agent-harness init \
   --agent claude-code --agent codex \
-  --mcp context7 --mcp playwright \
-  --skill obsidian-cli \
-  --plugin r2t-marketplace \
+  --mcp n8n-mcp --mcp figma \
+  --skill prd \
+  --plugin claude-official \
   -y
 
-agent-harness init --all --agent claude-code   # everything, one agent
+agent-harness init --all --agent claude-code   # everything in the catalog, one agent
 agent-harness init --dry-run --all             # show every action, write nothing
 ```
 
@@ -75,9 +99,9 @@ Run inside a project. Drops `CLAUDE.md`, `AGENTS.md`, a skill memory file, a
 project `.mcp.json` (and optionally `opencode.json`), and merges `.gitignore`.
 
 ```bash
-agent-harness scaffold                                   # interactive
-agent-harness scaffold --with-claude-md --with-agents-md --mcp context7 -y
-agent-harness scaffold --all -y                          # all docs + all catalog MCPs
+agent-harness scaffold                                          # interactive
+agent-harness scaffold --with-claude-md --with-agents-md --mcp n8n-mcp -y
+agent-harness scaffold --all -y                                 # all docs + all catalog MCPs
 agent-harness scaffold --all --dry-run
 ```
 
@@ -86,7 +110,8 @@ repeatable `--mcp`, `--memory-dest <path>`, `--no-gitignore`, `--all`, `-y`,
 `--dry-run`, `--force`.
 
 Existing files are never clobbered (skipped unless `--force`); `.gitignore`
-entries are merged under a managed block without duplicating.
+entries merge under a managed block without duplicating. Claude-only MCPs (see
+`agents` below) land in `.mcp.json` but not `opencode.json`.
 
 ---
 
@@ -102,11 +127,12 @@ entries are merged under a managed block without duplicating.
 | **Login** | `claude` (or `/login`) | `codex login` | `opencode auth login` |
 
 Skills are delegated to the [`skills`](https://github.com/vercel-labs/skills) CLI
-(`npx skills add`), which already maps each agent's path. MCP definitions are
-stored once in a **neutral** shape and translated to each agent's format.
+(`npx skills add`), which maps each agent's path; `"local"` skills are copied
+directly from `assets/skills/`. MCP definitions are stored once in a **neutral**
+shape and translated to each agent's format.
 
-**Secret-free:** the catalog stores env var *names* only. We never write secret
-values — each format gets a passthrough reference to the same-named env var
+**Secret-free:** the catalog stores env var *names* only. Secret values are never
+written — each format gets a passthrough reference to the same-named env var
 (Claude `${VAR}`, Codex `env_vars`, OpenCode `{env:VAR}`). Set those vars in your
 shell/`.env`.
 
@@ -115,39 +141,63 @@ shell/`.env`.
 ## The catalog (`assets/catalog.json`)
 
 Everything the menus offer lives in one data-driven file you edit without
-touching code. MCP entries are transport-neutral:
+touching code. MCP entries are transport-neutral. Annotated excerpt:
 
 ```jsonc
 {
   "agents": ["claude-code", "codex", "opencode"],
   "mcps": [
-    { "id": "context7", "label": "Context7", "transport": "http",
-      "url": "https://mcp.context7.com/mcp", "headers": {}, "env": [] },
-    { "id": "playwright", "label": "Playwright", "transport": "stdio",
-      "command": "npx", "args": ["-y", "@playwright/mcp"], "env": [] }
+    // cross-agent — installed for every selected agent
+    { "id": "n8n-mcp", "label": "n8n-mcp", "transport": "stdio",
+      "command": "npx", "args": ["-y", "n8n-mcp@latest"],
+      "env": ["N8N_API_URL", "N8N_API_KEY"] },   // env = var NAMES only; passed through, never stored
+    { "id": "figma", "label": "Figma", "transport": "http",
+      "url": "https://mcp.figma.com/mcp", "headers": {}, "env": [] },
+
+    // claude-only — the `agents` allowlist scopes it (omit = all agents)
+    { "id": "stitch", "label": "Stitch", "transport": "http",
+      "url": "https://stitch.googleapis.com/mcp",
+      "headers": { "X-Goog-Api-Key": "${STITCH_API_KEY}" },
+      "env": ["STITCH_API_KEY"], "agents": ["claude-code"] }
   ],
-  "skills":  [ { "id": "obsidian-cli", "source": "kepano/obsidian-skills", "skill": "obsidian-cli" } ],
-  "plugins": [ { "id": "r2t-marketplace", "agent": "claude-code",
-                 "marketplace": "reiquileut/r2t-marketplace", "name": "r2t-marketplace",
-                 "install": ["plugin-a"] } ],
-  "templates": { "claude_md": "templates/CLAUDE.md", "agents_md": "templates/AGENTS.md", "memory": "templates/memory.md" },
-  "gitignore": [".claude/settings.local.json"]
+  "skills": [
+    { "id": "anti-ai-slop", "source": "local", "skill": "anti-ai-slop" },   // bundled in assets/skills/<id>/
+    { "id": "impeccable",   "source": "local", "skill": "impeccable",
+      "agents": ["claude-code"] }                                           // skills take `agents` too
+  ],
+  "plugins": [
+    { "id": "claude-official", "agent": "claude-code",
+      "marketplace": "anthropics/claude-plugins-official", "name": "claude-plugins-official",
+      "install": ["context7", "github", "frontend-design", "playwright"] }
+  ],
+  "templates": {
+    "claude_md": "templates/clean-code-for-agents.md",   // both CLAUDE.md and AGENTS.md
+    "agents_md": "templates/clean-code-for-agents.md",   // write the SAME "Clean Code for Agents" doc
+    "memory":    "templates/memory.md"
+  },
+  "gitignore": [".claude/settings.local.json", ".opencode/cache/", ".agent-harness/"]
 }
 ```
 
-- **MCP** `env`: names of env vars to remind you about (values never written).
-- **MCP/Skill** `agents`: optional allowlist (e.g. `["claude-code"]`) — omit for all agents.
-- **Skill** `source`: `owner/repo`, a URL, or `"local"` (bundled under `assets/skills/<id>/`).
-- **Plugin** `name`: the marketplace's declared name used in `<plugin>@<name>` (defaults to the repo's last path segment).
+Field notes:
+- **MCP** `env` — names of env vars to remind you about; values are never written.
+- **MCP / Skill** `agents` — optional allowlist (e.g. `["claude-code"]`); omit for all agents.
+- **Skill** `source` — `owner/repo`, a URL, or `"local"` (bundled under `assets/skills/<id>/`).
+- **Plugin** `name` — the marketplace's declared name used in `<plugin>@<name>` (defaults to the repo's last path segment).
+- **templates** — point both docs at one file (DRY); they're written as separate `CLAUDE.md`/`AGENTS.md` you can then edit independently.
 
-Bundled skills under `assets/skills/` keep their own licenses (e.g. `impeccable` is
-Apache-2.0); their `SKILL.md` carries the license declaration.
+Override the whole catalog with `AGENT_HARNESS_CATALOG=/path/to/catalog.json`
+(handy for an internal/team catalog without forking). The CLI warns when a value
+still looks like a `<placeholder>`.
 
-The shipped catalog uses obvious placeholders like `<obsidian-mcp-package>` and
-`<skills-repo>` — replace them with your real values. The CLI warns when it sees
-a placeholder.
+### What the shipped catalog contains
 
-Point at a different catalog with `AGENT_HARNESS_CATALOG=/path/to/catalog.json`.
+It mirrors a real Claude Code setup, so a fresh machine reproduces it:
+
+- **MCPs** — `n8n-mcp`, `figma`, `chrome-devtools` (cross-agent) · `pencil`, `puppeteer`, `stitch` (Claude only).
+- **Skills** — `anti-ai-slop`, `prd` (cross-agent) · `impeccable` (Claude only; **Apache-2.0**; bundled).
+- **Plugins** — 6 Claude marketplaces: `claude-plugins-official`, `n8n-skills`, `openai-codex`, `taskmaster`, `obsidian-skills`, `claude-code-warp`.
+- **Docs** — `CLAUDE.md` and `AGENTS.md` both write the **Clean Code for Agents** standard (`assets/templates/clean-code-for-agents.md`).
 
 ---
 
@@ -163,19 +213,21 @@ you installed, e.g.:
   OpenCode     →  opencode auth login
 
   MCPs with OAuth (Notion, Google…) authenticate on first tool use.
-  MCPs needing API keys — export in your shell/.env: OBSIDIAN_VAULT_PATH
+  MCPs needing API keys — export in your shell/.env: N8N_API_URL, N8N_API_KEY
 ```
 
 ---
 
-## Distribution notes
+## Distribution
 
-1. **GitHub (primary):** `pnpm dlx github:reiquileut/agent-harness init`. `dist/`
-   is committed so no build runs at install time.
+1. **GitHub (primary):** `npx github:reiquileut/agent-harness` /
+   `pnpm dlx github:reiquileut/agent-harness`. `dist/` is committed and the build
+   runs via `prepack` (publish only), so **nothing builds at install time**.
 2. **npm (future):** publish `@r2t/agent-harness` (`publishConfig.access: public`).
-3. **`curl | bash` (optional):** `install.sh` is a stub; a CDN/redirect
-   (`vercel.json`) can serve it from a nice URL.
+3. **`curl | bash` (optional):** `install.sh` forwards to the same entrypoint; a
+   CDN/redirect (`vercel.json`) can serve it from a nice URL.
 
 ## License
 
-MIT
+MIT — see [`LICENSE`](./LICENSE). Bundled skills under `assets/skills/` keep their
+own licenses; `impeccable` is Apache-2.0 (declared in its `SKILL.md`).
