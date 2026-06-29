@@ -504,6 +504,14 @@ async function claudeHasMcp(id) {
   }
 }
 async function buildClaudeUserMcp(m, label) {
+  if (!commandOnPath("claude")) {
+    return {
+      kind: "note",
+      level: "warn",
+      label,
+      message: `Claude Code not on PATH \u2014 skipped ${m.id}. Install Claude, then re-run.`
+    };
+  }
   if (!isForce() && await claudeHasMcp(m.id)) {
     return { kind: "skip", label, reason: "already configured (claude mcp)" };
   }
