@@ -2,7 +2,7 @@
 
 // src/cli.ts
 import { Command } from "commander";
-import process8 from "process";
+import process9 from "process";
 
 // src/core/fsx.ts
 import { existsSync, promises as fs } from "fs";
@@ -97,7 +97,7 @@ ${GITIGNORE_END}
 }
 
 // src/commands/init.ts
-import process7 from "process";
+import process8 from "process";
 import pc5 from "picocolors";
 
 // src/core/actions.ts
@@ -699,21 +699,9 @@ async function buildLocalSkillCopyActions(agent, skill, scope) {
   return actions;
 }
 
-// src/ui/prompts.ts
-import {
-  cancel,
-  confirm,
-  groupMultiselect,
-  intro,
-  isCancel,
-  multiselect,
-  note
-} from "@clack/prompts";
-import pc4 from "picocolors";
-
 // src/commands/scaffold.ts
-import process6 from "process";
-import pc3 from "picocolors";
+import process7 from "process";
+import pc4 from "picocolors";
 
 // src/core/templates.ts
 import path6 from "path";
@@ -746,191 +734,117 @@ async function buildGitignoreMergeAction(entries, cwd) {
   return { kind: "file", label, path: file, before, after: content };
 }
 
-// src/commands/scaffold.ts
-var DEFAULT_MEMORY_DEST = ".claude/skills/memory/memory.md";
-function planFromFlags(catalog, opts) {
-  const memoryDest = opts.memoryDest ?? DEFAULT_MEMORY_DEST;
-  if (opts.all) {
-    return {
-      withClaudeMd: true,
-      withAgentsMd: true,
-      withMemory: true,
-      withOpencode: true,
-      withGitignore: true,
-      mcps: catalog.mcps,
-      skills: catalog.skills,
-      memoryDest
-    };
-  }
-  return {
-    withClaudeMd: opts.withClaudeMd,
-    withAgentsMd: opts.withAgentsMd,
-    withMemory: opts.withMemory,
-    withOpencode: opts.withOpencode,
-    withGitignore: opts.gitignore,
-    mcps: catalog.mcps.filter((m) => opts.mcp.includes(m.id)),
-    skills: catalog.skills.filter((s) => opts.skill.includes(s.id)),
-    memoryDest
-  };
-}
-function isInteractive(opts) {
-  if (opts.yes) return false;
-  const explicit = opts.all || opts.withClaudeMd || opts.withAgentsMd || opts.withMemory || opts.withOpencode || opts.mcp.length > 0 || opts.skill.length > 0;
-  if (explicit) return false;
-  return Boolean(process6.stdout.isTTY && process6.stdin.isTTY);
-}
-function isEmptyPlan(p) {
-  return !p.withClaudeMd && !p.withAgentsMd && !p.withMemory && !p.withGitignore && p.mcps.length === 0 && p.skills.length === 0;
-}
-async function skillActions(skills) {
-  const actions = [];
-  for (const skill of skills) {
-    for (const agent of AGENTS) {
-      if (!agent.supports.skills || !skillAppliesTo(skill, agent.id)) continue;
-      if (isLocalSkill(skill)) {
-        actions.push(...await buildLocalSkillCopyActions(agent, skill, "project"));
-      } else {
-        actions.push(buildSkillAction(agent, skill, "project"));
-      }
-    }
-  }
-  return actions;
-}
-async function runScaffoldCommand(opts) {
-  const catalog = await loadCatalog();
-  const plan = isInteractive(opts) ? await promptScaffoldSelection(catalog) : planFromFlags(catalog, opts);
-  if (!plan) {
-    log.warn("Nothing selected \u2014 aborting.");
-    return;
-  }
-  if (isEmptyPlan(plan)) {
-    log.warn(
-      "Nothing to scaffold. Pass --with-claude-md / --with-agents-md / --with-memory / --skill <id> / --mcp <id> / --all."
-    );
-    return;
-  }
-  const actions = [];
-  if (plan.withClaudeMd) {
-    actions.push(await buildTemplateCopyAction(catalog.templates.claude_md, "CLAUDE.md", "CLAUDE.md"));
-  }
-  if (plan.withAgentsMd) {
-    actions.push(await buildTemplateCopyAction(catalog.templates.agents_md, "AGENTS.md", "AGENTS.md"));
-  }
-  if (plan.withMemory) {
-    actions.push(
-      await buildTemplateCopyAction(catalog.templates.memory, plan.memoryDest, `memory \u2192 ${plan.memoryDest}`)
-    );
-  }
-  if (plan.skills.length) {
-    actions.push(...await skillActions(plan.skills));
-  }
-  if (plan.mcps.length) {
-    const claudeMcps = plan.mcps.filter((m) => mcpAppliesTo(m, "claude-code"));
-    if (claudeMcps.length) {
-      actions.push(await buildProjectMcpAction(claudeMcps, { file: ".mcp.json", format: "claude" }));
-    }
-    if (plan.withOpencode) {
-      const opencodeMcps = plan.mcps.filter((m) => mcpAppliesTo(m, "opencode"));
-      if (opencodeMcps.length) {
-        actions.push(await buildProjectMcpAction(opencodeMcps, { file: "opencode.json", format: "opencode" }));
-      }
-    }
-  }
-  if (plan.withGitignore) {
-    actions.push(await buildGitignoreMergeAction(catalog.gitignore));
-  }
-  log.plain("");
-  log.info(`${isDryRun() ? pc3.yellow("Dry run \u2014 ") : ""}Scaffolding ${pc3.bold(process6.cwd())}`);
-  log.plain("");
-  await runActions(actions);
-  log.plain("");
-  log.success(isDryRun() ? "Dry run complete \u2014 nothing written." : "Scaffold complete.");
-  log.plain(pc3.dim("  CLAUDE.md \u2192 Claude Code \xB7 AGENTS.md \u2192 Codex & OpenCode \xB7 skills \u2192 project skill dirs."));
-}
-
 // src/ui/prompts.ts
+import path7 from "path";
+import process6 from "process";
+import {
+  cancel,
+  confirm,
+  groupMultiselect,
+  intro,
+  isCancel,
+  multiselect,
+  note
+} from "@clack/prompts";
+import pc3 from "picocolors";
 function toAgents(ids) {
   return ids.map(getAgent).filter((a) => Boolean(a));
 }
 function mcpHint(m) {
   return m.agents ? `${m.transport} \xB7 ${m.agents.join("/")} only` : m.transport;
 }
+function skillHint(s, scope) {
+  return s.agents ? `${s.agents.join("/")} \xB7 ${scope}` : scope;
+}
+function buildUnifiedGroups(catalog) {
+  const groups = {};
+  const machine = [];
+  for (const m of catalog.mcps) machine.push({ value: `mcp:${m.id}`, label: m.label, hint: mcpHint(m) });
+  for (const p of catalog.plugins) machine.push({ value: `plugin:${p.id}`, label: p.label ?? p.id, hint: p.agent });
+  for (const s of catalog.skills) machine.push({ value: `mskill:${s.id}`, label: s.label ?? s.skill, hint: skillHint(s, "global") });
+  if (machine.length) groups["Nesta m\xE1quina (todos os projetos)"] = machine;
+  const repo = [
+    { value: "doc:claude", label: "CLAUDE.md", hint: "Claude Code" },
+    { value: "doc:agents", label: "AGENTS.md", hint: "Codex / OpenCode" },
+    { value: "doc:memory", label: "Skill memory", hint: DEFAULT_MEMORY_DEST }
+  ];
+  for (const s of catalog.skills) repo.push({ value: `pskill:${s.id}`, label: s.label ?? s.skill, hint: skillHint(s, "repo") });
+  if (catalog.mcps.length) repo.push({ value: "projmcp", label: ".mcp.json + opencode.json", hint: "as MCPs marcadas acima" });
+  repo.push({ value: "gitignore", label: "Merge .gitignore", hint: "agent caches" });
+  groups[`Neste reposit\xF3rio (${path7.basename(process6.cwd())})`] = repo;
+  return groups;
+}
+function parseUnifiedSelection(catalog, agents, values) {
+  const has = (v) => values.includes(v);
+  const ids = (prefix) => values.filter((v) => v.startsWith(prefix)).map((v) => v.slice(prefix.length));
+  const mcps = catalog.mcps.filter((m) => ids("mcp:").includes(m.id));
+  const repoSkillIds = ids("pskill:");
+  const wantRepo = has("doc:claude") || has("doc:agents") || has("doc:memory") || repoSkillIds.length > 0 || has("projmcp");
+  const repo = wantRepo ? {
+    withClaudeMd: has("doc:claude"),
+    withAgentsMd: has("doc:agents"),
+    withMemory: has("doc:memory"),
+    withOpencode: has("projmcp"),
+    withGitignore: has("gitignore"),
+    mcps: has("projmcp") ? mcps : [],
+    skills: catalog.skills.filter((s) => repoSkillIds.includes(s.id)),
+    memoryDest: DEFAULT_MEMORY_DEST
+  } : void 0;
+  return {
+    agents,
+    mcps,
+    skills: catalog.skills.filter((s) => ids("mskill:").includes(s.id)),
+    plugins: catalog.plugins.filter((p) => ids("plugin:").includes(p.id)),
+    repo
+  };
+}
+function unifiedSummary(sel) {
+  const names = (arr) => arr.length ? arr.map((x) => x.id).join(", ") : pc3.dim("none");
+  const lines = [
+    `Agentes:  ${sel.agents.map((a) => a.label).join(", ")}`,
+    `M\xE1quina:  MCPs ${names(sel.mcps)} \xB7 skills ${names(sel.skills)} \xB7 plugins ${names(sel.plugins)}`
+  ];
+  if (sel.repo) {
+    const docs = [sel.repo.withClaudeMd && "CLAUDE.md", sel.repo.withAgentsMd && "AGENTS.md", sel.repo.withMemory && "memory"].filter(Boolean).join(", ") || pc3.dim("none");
+    lines.push(`Repo:     ${docs} \xB7 skills ${names(sel.repo.skills)}${sel.repo.mcps.length ? " \xB7 .mcp.json" : ""}`);
+  }
+  return lines.join("\n");
+}
 async function promptInitSelection(catalog) {
-  intro(pc4.bgCyan(pc4.black(" agent-harness ")));
+  intro(pc3.bgCyan(pc3.black(" agent-harness ")));
   const detected = new Set(detectInstalledAgentIds());
-  const agentOptions = catalog.agents.map((id) => {
-    const a = getAgent(id);
-    return {
-      value: id,
-      label: a?.label ?? id,
-      hint: detected.has(id) ? "detected" : void 0
-    };
-  });
   const agentSel = await multiselect({
-    message: "Which agents do you want to configure?",
-    options: agentOptions,
+    message: "Quais agentes configurar?",
+    options: catalog.agents.map((id) => ({
+      value: id,
+      label: getAgent(id)?.label ?? id,
+      hint: detected.has(id) ? "detected" : void 0
+    })),
     initialValues: catalog.agents.filter((id) => detected.has(id)),
     required: true
   });
   if (isCancel(agentSel)) return abort();
-  const options = {};
-  if (catalog.mcps.length) {
-    options["MCP servers"] = catalog.mcps.map((m) => ({
-      value: `mcp:${m.id}`,
-      label: m.label,
-      hint: mcpHint(m)
-    }));
-  }
-  if (catalog.skills.length) {
-    options["Skills"] = catalog.skills.map((s) => ({
-      value: `skill:${s.id}`,
-      label: s.label ?? s.skill,
-      hint: s.agents ? `${s.agents.join("/")} only` : void 0
-    }));
-  }
-  if (catalog.plugins.length) {
-    options["Plugins"] = catalog.plugins.map((p) => ({
-      value: `plugin:${p.id}`,
-      label: p.label ?? p.id,
-      hint: p.agent
-    }));
-  }
+  const agents = toAgents(agentSel);
+  const groups = buildUnifiedGroups(catalog);
   let chosen = [];
-  if (Object.keys(options).length) {
+  if (Object.keys(groups).length) {
     const picked = await groupMultiselect({
-      message: "Select items to install (space to toggle, enter to confirm):",
-      options,
+      message: "Marque o que instalar (espa\xE7o alterna, enter confirma):",
+      options: groups,
       required: false,
-      selectableGroups: true
+      selectableGroups: false
     });
     if (isCancel(picked)) return abort();
     chosen = picked;
   }
-  const has = (prefix) => chosen.filter((v) => v.startsWith(prefix)).map((v) => v.slice(prefix.length));
-  const mcpIds = has("mcp:");
-  const skillIds = has("skill:");
-  const pluginIds = has("plugin:");
-  const agents = toAgents(agentSel);
-  note(
-    [
-      `Agents:  ${agents.map((a) => a.label).join(", ")}`,
-      `MCPs:    ${mcpIds.length ? mcpIds.join(", ") : pc4.dim("none")}`,
-      `Skills:  ${skillIds.length ? skillIds.join(", ") : pc4.dim("none")}`,
-      `Plugins: ${pluginIds.length ? pluginIds.join(", ") : pc4.dim("none")}`
-    ].join("\n"),
-    "Summary"
-  );
-  const ok = await confirm({ message: "Proceed with installation?" });
+  const sel = parseUnifiedSelection(catalog, agents, chosen);
+  note(unifiedSummary(sel), "Resumo");
+  const ok = await confirm({ message: "Prosseguir com a instala\xE7\xE3o?" });
   if (isCancel(ok) || !ok) return abort();
-  return {
-    agents,
-    mcps: catalog.mcps.filter((m) => mcpIds.includes(m.id)),
-    skills: catalog.skills.filter((s) => skillIds.includes(s.id)),
-    plugins: catalog.plugins.filter((p) => pluginIds.includes(p.id))
-  };
+  return sel;
 }
 async function promptScaffoldSelection(catalog) {
-  intro(pc4.bgCyan(pc4.black(" agent-harness scaffold ")));
+  intro(pc3.bgCyan(pc3.black(" agent-harness scaffold ")));
   const artifacts = await multiselect({
     message: "What should I add to this repo?",
     options: [
@@ -983,10 +897,10 @@ async function promptScaffoldSelection(catalog) {
   };
   note(
     [
-      `Docs:     ${[plan.withClaudeMd && "CLAUDE.md", plan.withAgentsMd && "AGENTS.md", plan.withMemory && "memory"].filter(Boolean).join(", ") || pc4.dim("none")}`,
-      `Skills:   ${skills.length ? skills.map((s) => s.id).join(", ") : pc4.dim("none")}`,
-      `MCPs:     ${mcps.length ? mcps.map((m) => m.id).join(", ") : pc4.dim("none")}${plan.withOpencode ? pc4.dim(" (+opencode.json)") : ""}`,
-      `gitignore: ${plan.withGitignore ? "merge" : pc4.dim("skip")}`
+      `Docs:     ${[plan.withClaudeMd && "CLAUDE.md", plan.withAgentsMd && "AGENTS.md", plan.withMemory && "memory"].filter(Boolean).join(", ") || pc3.dim("none")}`,
+      `Skills:   ${skills.length ? skills.map((s) => s.id).join(", ") : pc3.dim("none")}`,
+      `MCPs:     ${mcps.length ? mcps.map((m) => m.id).join(", ") : pc3.dim("none")}${plan.withOpencode ? pc3.dim(" (+opencode.json)") : ""}`,
+      `gitignore: ${plan.withGitignore ? "merge" : pc3.dim("skip")}`
     ].join("\n"),
     "Summary"
   );
@@ -997,6 +911,112 @@ async function promptScaffoldSelection(catalog) {
 function abort() {
   cancel("Cancelled \u2014 nothing was changed.");
   return null;
+}
+
+// src/commands/scaffold.ts
+var DEFAULT_MEMORY_DEST = ".claude/skills/memory/memory.md";
+function planFromFlags(catalog, opts) {
+  const memoryDest = opts.memoryDest ?? DEFAULT_MEMORY_DEST;
+  if (opts.all) {
+    return {
+      withClaudeMd: true,
+      withAgentsMd: true,
+      withMemory: true,
+      withOpencode: true,
+      withGitignore: true,
+      mcps: catalog.mcps,
+      skills: catalog.skills,
+      memoryDest
+    };
+  }
+  return {
+    withClaudeMd: opts.withClaudeMd,
+    withAgentsMd: opts.withAgentsMd,
+    withMemory: opts.withMemory,
+    withOpencode: opts.withOpencode,
+    withGitignore: opts.gitignore,
+    mcps: catalog.mcps.filter((m) => opts.mcp.includes(m.id)),
+    skills: catalog.skills.filter((s) => opts.skill.includes(s.id)),
+    memoryDest
+  };
+}
+function isInteractive(opts) {
+  if (opts.yes) return false;
+  const explicit = opts.all || opts.withClaudeMd || opts.withAgentsMd || opts.withMemory || opts.withOpencode || opts.mcp.length > 0 || opts.skill.length > 0;
+  if (explicit) return false;
+  return Boolean(process7.stdout.isTTY && process7.stdin.isTTY);
+}
+function isEmptyPlan(p) {
+  return !p.withClaudeMd && !p.withAgentsMd && !p.withMemory && !p.withGitignore && p.mcps.length === 0 && p.skills.length === 0;
+}
+async function skillActions(skills) {
+  const actions = [];
+  for (const skill of skills) {
+    for (const agent of AGENTS) {
+      if (!agent.supports.skills || !skillAppliesTo(skill, agent.id)) continue;
+      if (isLocalSkill(skill)) {
+        actions.push(...await buildLocalSkillCopyActions(agent, skill, "project"));
+      } else {
+        actions.push(buildSkillAction(agent, skill, "project"));
+      }
+    }
+  }
+  return actions;
+}
+async function buildScaffoldActions(catalog, plan) {
+  const actions = [];
+  if (plan.withClaudeMd) {
+    actions.push(await buildTemplateCopyAction(catalog.templates.claude_md, "CLAUDE.md", "CLAUDE.md"));
+  }
+  if (plan.withAgentsMd) {
+    actions.push(await buildTemplateCopyAction(catalog.templates.agents_md, "AGENTS.md", "AGENTS.md"));
+  }
+  if (plan.withMemory) {
+    actions.push(
+      await buildTemplateCopyAction(catalog.templates.memory, plan.memoryDest, `memory \u2192 ${plan.memoryDest}`)
+    );
+  }
+  if (plan.skills.length) {
+    actions.push(...await skillActions(plan.skills));
+  }
+  if (plan.mcps.length) {
+    const claudeMcps = plan.mcps.filter((m) => mcpAppliesTo(m, "claude-code"));
+    if (claudeMcps.length) {
+      actions.push(await buildProjectMcpAction(claudeMcps, { file: ".mcp.json", format: "claude" }));
+    }
+    if (plan.withOpencode) {
+      const opencodeMcps = plan.mcps.filter((m) => mcpAppliesTo(m, "opencode"));
+      if (opencodeMcps.length) {
+        actions.push(await buildProjectMcpAction(opencodeMcps, { file: "opencode.json", format: "opencode" }));
+      }
+    }
+  }
+  if (plan.withGitignore) {
+    actions.push(await buildGitignoreMergeAction(catalog.gitignore));
+  }
+  return actions;
+}
+async function runScaffoldCommand(opts) {
+  const catalog = await loadCatalog();
+  const plan = isInteractive(opts) ? await promptScaffoldSelection(catalog) : planFromFlags(catalog, opts);
+  if (!plan) {
+    log.warn("Nothing selected \u2014 aborting.");
+    return;
+  }
+  if (isEmptyPlan(plan)) {
+    log.warn(
+      "Nothing to scaffold. Pass --with-claude-md / --with-agents-md / --with-memory / --skill <id> / --mcp <id> / --all."
+    );
+    return;
+  }
+  const actions = await buildScaffoldActions(catalog, plan);
+  log.plain("");
+  log.info(`${isDryRun() ? pc4.yellow("Dry run \u2014 ") : ""}Scaffolding ${pc4.bold(process7.cwd())}`);
+  log.plain("");
+  await runActions(actions);
+  log.plain("");
+  log.success(isDryRun() ? "Dry run complete \u2014 nothing written." : "Scaffold complete.");
+  log.plain(pc4.dim("  CLAUDE.md \u2192 Claude Code \xB7 AGENTS.md \u2192 Codex & OpenCode \xB7 skills \u2192 project skill dirs."));
 }
 
 // src/commands/init.ts
@@ -1027,7 +1047,7 @@ function isInteractive2(opts) {
   if (opts.yes) return false;
   const explicit = opts.all || opts.agent.length > 0 || opts.mcp.length > 0 || opts.skill.length > 0 || opts.plugin.length > 0;
   if (explicit) return false;
-  return Boolean(process7.stdout.isTTY && process7.stdin.isTTY);
+  return Boolean(process8.stdout.isTTY && process8.stdin.isTTY);
 }
 async function runInitCommand(opts) {
   const catalog = await loadCatalog();
@@ -1049,6 +1069,14 @@ async function runInitCommand(opts) {
     log.plain("");
     log.step(pc5.bold(agent.label));
     await configureAgent(agent, selection);
+  }
+  if (selection.repo) {
+    const repoActions = await buildScaffoldActions(catalog, selection.repo);
+    if (repoActions.length) {
+      log.plain("");
+      log.step(pc5.bold(`Neste reposit\xF3rio (${process8.cwd()})`));
+      await runActions(repoActions);
+    }
   }
   printAuthBlock(selection);
 }
@@ -1123,7 +1151,7 @@ function printAuthBlock(sel) {
   }
   log.plain("");
   log.plain(pc5.dim("  MCPs with OAuth (Notion, Google\u2026) authenticate on first tool use."));
-  const envs = requiredEnvVars(sel.mcps);
+  const envs = requiredEnvVars([...sel.mcps, ...sel.repo?.mcps ?? []]);
   if (envs.length) {
     log.plain(pc5.dim(`  MCPs needing API keys \u2014 export in your shell/.env: ${envs.join(", ")}`));
   }
@@ -1164,5 +1192,5 @@ program.command("scaffold").description("Scaffold the current repo: CLAUDE.md, A
 });
 program.parseAsync().catch((err) => {
   log.error(err instanceof Error ? err.message : String(err));
-  process8.exit(1);
+  process9.exit(1);
 });

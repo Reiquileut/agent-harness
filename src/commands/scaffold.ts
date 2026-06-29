@@ -118,24 +118,14 @@ async function skillActions(skills: SkillEntry[]): Promise<Action[]> {
   return actions;
 }
 
-export async function runScaffoldCommand(opts: ScaffoldOptions): Promise<void> {
-  const catalog = await loadCatalog();
-
-  const plan = isInteractive(opts)
-    ? await promptScaffoldSelection(catalog)
-    : planFromFlags(catalog, opts);
-
-  if (!plan) {
-    log.warn('Nothing selected — aborting.');
-    return;
-  }
-  if (isEmptyPlan(plan)) {
-    log.warn(
-      'Nothing to scaffold. Pass --with-claude-md / --with-agents-md / --with-memory / --skill <id> / --mcp <id> / --all.',
-    );
-    return;
-  }
-
+/**
+ * Build every repo-level action for a plan (docs, project skills, project MCP
+ * files, .gitignore merge). Shared by `scaffold` and the unified `init` flow.
+ */
+export async function buildScaffoldActions(
+  catalog: CatalogData,
+  plan: ScaffoldPlan,
+): Promise<Action[]> {
   const actions: Action[] = [];
   if (plan.withClaudeMd) {
     actions.push(await buildTemplateCopyAction(catalog.templates.claude_md, 'CLAUDE.md', 'CLAUDE.md'));
@@ -166,6 +156,28 @@ export async function runScaffoldCommand(opts: ScaffoldOptions): Promise<void> {
   if (plan.withGitignore) {
     actions.push(await buildGitignoreMergeAction(catalog.gitignore));
   }
+  return actions;
+}
+
+export async function runScaffoldCommand(opts: ScaffoldOptions): Promise<void> {
+  const catalog = await loadCatalog();
+
+  const plan = isInteractive(opts)
+    ? await promptScaffoldSelection(catalog)
+    : planFromFlags(catalog, opts);
+
+  if (!plan) {
+    log.warn('Nothing selected — aborting.');
+    return;
+  }
+  if (isEmptyPlan(plan)) {
+    log.warn(
+      'Nothing to scaffold. Pass --with-claude-md / --with-agents-md / --with-memory / --skill <id> / --mcp <id> / --all.',
+    );
+    return;
+  }
+
+  const actions = await buildScaffoldActions(catalog, plan);
 
   log.plain('');
   log.info(`${isDryRun() ? pc.yellow('Dry run — ') : ''}Scaffolding ${pc.bold(process.cwd())}`);
