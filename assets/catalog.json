@@ -27,11 +27,30 @@
     },
     {
       "id": "pencil",
-      "label": "Pencil — .pen design editor (Windows + Claude only)",
+      "label": "Pencil — .pen design editor (Windows, Claude only)",
       "transport": "stdio",
       "command": "${LOCALAPPDATA}\\Programs\\Pencil\\resources\\app.asar.unpacked\\out\\mcp-server-windows-x64.exe",
       "args": ["--app", "desktop", "--agent", "claudeCodeCLI"],
-      "env": []
+      "env": [],
+      "agents": ["claude-code"]
+    },
+    {
+      "id": "puppeteer",
+      "label": "Puppeteer via Smithery — browser automation",
+      "transport": "stdio",
+      "command": "npx",
+      "args": ["-y", "@smithery/cli@latest", "run", "@smithery-ai/puppeteer", "--key", "${SMITHERY_KEY}"],
+      "env": ["SMITHERY_KEY"],
+      "agents": ["claude-code"]
+    },
+    {
+      "id": "stitch",
+      "label": "Stitch (Google) — design-to-code",
+      "transport": "http",
+      "url": "https://stitch.googleapis.com/mcp",
+      "headers": { "X-Goog-Api-Key": "${STITCH_API_KEY}" },
+      "env": ["STITCH_API_KEY"],
+      "agents": ["claude-code"]
     }
   ],
   "skills": [
@@ -46,6 +65,12 @@
       "label": "PRD — generate product requirements docs",
       "source": "local",
       "skill": "prd"
+    },
+    {
+      "id": "impeccable",
+      "label": "Impeccable — frontend design/UX system (v3.5.0)",
+      "source": "local",
+      "skill": "impeccable"
     }
   ],
   "plugins": [
@@ -99,8 +124,8 @@
     }
   ],
   "templates": {
-    "claude_md": "templates/CLAUDE.md",
-    "agents_md": "templates/AGENTS.md",
+    "claude_md": "templates/clean-code-for-agents.md",
+    "agents_md": "templates/clean-code-for-agents.md",
     "memory": "templates/memory.md"
   },
   "gitignore": [

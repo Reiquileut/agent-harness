@@ -24,7 +24,7 @@ function toAgents(ids: string[]): AgentInfo[] {
 }
 
 function mcpHint(m: McpEntry): string {
-  return m.transport;
+  return m.agents ? `${m.transport} · ${m.agents.join('/')} only` : m.transport;
 }
 
 export async function promptInitSelection(catalog: CatalogData): Promise<Selection | null> {

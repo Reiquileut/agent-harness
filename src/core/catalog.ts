@@ -22,6 +22,8 @@ const McpHttpSchema = z.object({
   url: z.string().min(1),
   headers: z.record(z.string(), z.string()).default({}),
   env: z.array(z.string()).default([]),
+  /** Restrict this MCP to specific agents (omit = all agents). */
+  agents: z.array(z.string()).optional(),
 });
 
 const McpStdioSchema = z.object({
@@ -31,6 +33,8 @@ const McpStdioSchema = z.object({
   command: z.string().min(1),
   args: z.array(z.string()).default([]),
   env: z.array(z.string()).default([]),
+  /** Restrict this MCP to specific agents (omit = all agents). */
+  agents: z.array(z.string()).optional(),
 });
 
 const McpSchema = z.discriminatedUnion('transport', [McpHttpSchema, McpStdioSchema]);
@@ -136,4 +140,9 @@ export async function loadCatalog(): Promise<CatalogData> {
 /** A placeholder value still looks like `<something>` — used to warn the user. */
 export function looksLikePlaceholder(value: string): boolean {
   return /<[^>]+>/.test(value);
+}
+
+/** True when an MCP entry should be installed for the given agent. */
+export function mcpAppliesTo(mcp: McpEntry, agentId: string): boolean {
+  return !mcp.agents || mcp.agents.includes(agentId);
 }
