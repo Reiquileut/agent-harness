@@ -38,6 +38,8 @@ chk "CLAUDE.md == AGENTS.md"             'diff -q "$R/CLAUDE.md" "$R/AGENTS.md" 
 chk "CLAUDE.md is clean-code doc"        'head -1 "$R/CLAUDE.md" | grep -q "Clean Code for Agents"'
 chk ".mcp.json has 4 servers"           '[ "$(keys "$R/.mcp.json" mcpServers)" = 4 ]'
 chk "opencode.json has 2 servers"       '[ "$(keys "$R/opencode.json" mcp)" = 2 ]'
+chk "skill installed into repo"         '[ -f "$R/.claude/skills/prd/SKILL.md" ]'
+chk "claude-only skill not in .agents"  '[ ! -d "$R/.agents/skills/impeccable" ]'
 
 echo ""
 if [ "$fail" = 0 ]; then echo "E2E: all checks passed"; else echo "E2E: FAILURES above"; exit 1; fi

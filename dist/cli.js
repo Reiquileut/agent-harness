@@ -758,28 +758,43 @@ function planFromFlags(catalog, opts) {
       withOpencode: true,
       withGitignore: true,
       mcps: catalog.mcps,
+      skills: catalog.skills,
       memoryDest
     };
   }
-  const mcps = catalog.mcps.filter((m) => opts.mcp.includes(m.id));
   return {
     withClaudeMd: opts.withClaudeMd,
     withAgentsMd: opts.withAgentsMd,
     withMemory: opts.withMemory,
     withOpencode: opts.withOpencode,
     withGitignore: opts.gitignore,
-    mcps,
+    mcps: catalog.mcps.filter((m) => opts.mcp.includes(m.id)),
+    skills: catalog.skills.filter((s) => opts.skill.includes(s.id)),
     memoryDest
   };
 }
 function isInteractive(opts) {
   if (opts.yes) return false;
-  const explicit = opts.all || opts.withClaudeMd || opts.withAgentsMd || opts.withMemory || opts.withOpencode || opts.mcp.length > 0;
+  const explicit = opts.all || opts.withClaudeMd || opts.withAgentsMd || opts.withMemory || opts.withOpencode || opts.mcp.length > 0 || opts.skill.length > 0;
   if (explicit) return false;
   return Boolean(process6.stdout.isTTY && process6.stdin.isTTY);
 }
 function isEmptyPlan(p) {
-  return !p.withClaudeMd && !p.withAgentsMd && !p.withMemory && !p.withGitignore && p.mcps.length === 0;
+  return !p.withClaudeMd && !p.withAgentsMd && !p.withMemory && !p.withGitignore && p.mcps.length === 0 && p.skills.length === 0;
+}
+async function skillActions(skills) {
+  const actions = [];
+  for (const skill of skills) {
+    for (const agent of AGENTS) {
+      if (!agent.supports.skills || !skillAppliesTo(skill, agent.id)) continue;
+      if (isLocalSkill(skill)) {
+        actions.push(...await buildLocalSkillCopyActions(agent, skill, "project"));
+      } else {
+        actions.push(buildSkillAction(agent, skill, "project"));
+      }
+    }
+  }
+  return actions;
 }
 async function runScaffoldCommand(opts) {
   const catalog = await loadCatalog();
@@ -790,7 +805,7 @@ async function runScaffoldCommand(opts) {
   }
   if (isEmptyPlan(plan)) {
     log.warn(
-      "Nothing to scaffold. Pass --with-claude-md / --with-agents-md / --with-memory / --mcp <id> / --all."
+      "Nothing to scaffold. Pass --with-claude-md / --with-agents-md / --with-memory / --skill <id> / --mcp <id> / --all."
     );
     return;
   }
@@ -805,6 +820,9 @@ async function runScaffoldCommand(opts) {
     actions.push(
       await buildTemplateCopyAction(catalog.templates.memory, plan.memoryDest, `memory \u2192 ${plan.memoryDest}`)
     );
+  }
+  if (plan.skills.length) {
+    actions.push(...await skillActions(plan.skills));
   }
   if (plan.mcps.length) {
     const claudeMcps = plan.mcps.filter((m) => mcpAppliesTo(m, "claude-code"));
@@ -827,7 +845,7 @@ async function runScaffoldCommand(opts) {
   await runActions(actions);
   log.plain("");
   log.success(isDryRun() ? "Dry run complete \u2014 nothing written." : "Scaffold complete.");
-  log.plain(pc3.dim("  CLAUDE.md \u2192 Claude Code \xB7 AGENTS.md \u2192 Codex & OpenCode \xB7 .mcp.json is team-shared."));
+  log.plain(pc3.dim("  CLAUDE.md \u2192 Claude Code \xB7 AGENTS.md \u2192 Codex & OpenCode \xB7 skills \u2192 project skill dirs."));
 }
 
 // src/ui/prompts.ts
@@ -919,6 +937,7 @@ async function promptScaffoldSelection(catalog) {
       { value: "claude-md", label: "CLAUDE.md", hint: "Claude Code instructions" },
       { value: "agents-md", label: "AGENTS.md", hint: "Codex / OpenCode instructions" },
       { value: "memory", label: "Skill memory file", hint: DEFAULT_MEMORY_DEST },
+      { value: "skills", label: "Skills", hint: "install into the repo (project-scoped)" },
       { value: "mcp", label: "Project .mcp.json", hint: "Claude project MCPs" },
       { value: "opencode", label: "Project opencode.json", hint: "OpenCode project MCPs" },
       { value: "gitignore", label: "Merge .gitignore", hint: "agent caches" }
@@ -938,6 +957,20 @@ async function promptScaffoldSelection(catalog) {
     if (isCancel(picked)) return abort();
     mcps = catalog.mcps.filter((m) => picked.includes(m.id));
   }
+  let skills = [];
+  if (want("skills") && catalog.skills.length) {
+    const picked = await multiselect({
+      message: "Which skills to install into the repo?",
+      options: catalog.skills.map((s) => ({
+        value: s.id,
+        label: s.label ?? s.skill,
+        hint: s.agents ? `${s.agents.join("/")} only` : void 0
+      })),
+      required: false
+    });
+    if (isCancel(picked)) return abort();
+    skills = catalog.skills.filter((s) => picked.includes(s.id));
+  }
   const plan = {
     withClaudeMd: want("claude-md"),
     withAgentsMd: want("agents-md"),
@@ -945,11 +978,13 @@ async function promptScaffoldSelection(catalog) {
     withOpencode: want("opencode"),
     withGitignore: want("gitignore"),
     mcps,
+    skills,
     memoryDest: DEFAULT_MEMORY_DEST
   };
   note(
     [
       `Docs:     ${[plan.withClaudeMd && "CLAUDE.md", plan.withAgentsMd && "AGENTS.md", plan.withMemory && "memory"].filter(Boolean).join(", ") || pc4.dim("none")}`,
+      `Skills:   ${skills.length ? skills.map((s) => s.id).join(", ") : pc4.dim("none")}`,
       `MCPs:     ${mcps.length ? mcps.map((m) => m.id).join(", ") : pc4.dim("none")}${plan.withOpencode ? pc4.dim(" (+opencode.json)") : ""}`,
       `gitignore: ${plan.withGitignore ? "merge" : pc4.dim("skip")}`
     ].join("\n"),
@@ -1112,10 +1147,11 @@ program.command("init", { isDefault: true }).description("Configure agents on th
     yes: !!opts.yes
   });
 });
-program.command("scaffold").description("Scaffold the current repo: CLAUDE.md, AGENTS.md, skill memory, project .mcp.json, and merge .gitignore.").option("--mcp <id>", "MCP to include in project config (repeatable)", collect, []).option("--with-claude-md", "write CLAUDE.md", false).option("--with-agents-md", "write AGENTS.md", false).option("--with-memory", "write the skill memory file", false).option("--with-opencode", "also write a project opencode.json", false).option("--memory-dest <path>", "destination path for the memory file").option("--no-gitignore", "do not merge .gitignore").option("--all", "scaffold all docs + all catalog MCPs", false).option("-y, --yes", "assume defaults, no prompts (CI)", false).option("--dry-run", "show actions without writing anything", false).option("--force", "overwrite existing template files", false).action(async (opts) => {
+program.command("scaffold").description("Scaffold the current repo: CLAUDE.md, AGENTS.md, skill memory, project-scoped skills, project .mcp.json, and merge .gitignore.").option("--mcp <id>", "MCP to include in project config (repeatable)", collect, []).option("--skill <id>", "skill to install into the repo, project-scoped (repeatable)", collect, []).option("--with-claude-md", "write CLAUDE.md", false).option("--with-agents-md", "write AGENTS.md", false).option("--with-memory", "write the skill memory file", false).option("--with-opencode", "also write a project opencode.json", false).option("--memory-dest <path>", "destination path for the memory file").option("--no-gitignore", "do not merge .gitignore").option("--all", "scaffold all docs + all catalog MCPs", false).option("-y, --yes", "assume defaults, no prompts (CI)", false).option("--dry-run", "show actions without writing anything", false).option("--force", "overwrite existing template files", false).action(async (opts) => {
   setRunContext({ dryRun: !!opts.dryRun, force: !!opts.force, yes: !!opts.yes });
   await runScaffoldCommand({
     mcp: opts.mcp,
+    skill: opts.skill,
     withClaudeMd: !!opts.withClaudeMd,
     withAgentsMd: !!opts.withAgentsMd,
     withMemory: !!opts.withMemory,

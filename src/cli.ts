@@ -41,8 +41,9 @@ program
 
 program
   .command('scaffold')
-  .description('Scaffold the current repo: CLAUDE.md, AGENTS.md, skill memory, project .mcp.json, and merge .gitignore.')
+  .description('Scaffold the current repo: CLAUDE.md, AGENTS.md, skill memory, project-scoped skills, project .mcp.json, and merge .gitignore.')
   .option('--mcp <id>', 'MCP to include in project config (repeatable)', collect, [])
+  .option('--skill <id>', 'skill to install into the repo, project-scoped (repeatable)', collect, [])
   .option('--with-claude-md', 'write CLAUDE.md', false)
   .option('--with-agents-md', 'write AGENTS.md', false)
   .option('--with-memory', 'write the skill memory file', false)
@@ -57,6 +58,7 @@ program
     setRunContext({ dryRun: !!opts.dryRun, force: !!opts.force, yes: !!opts.yes });
     await runScaffoldCommand({
       mcp: opts.mcp,
+      skill: opts.skill,
       withClaudeMd: !!opts.withClaudeMd,
       withAgentsMd: !!opts.withAgentsMd,
       withMemory: !!opts.withMemory,

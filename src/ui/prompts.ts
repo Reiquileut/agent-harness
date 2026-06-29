@@ -17,7 +17,7 @@ import pc from 'picocolors';
 import type { Selection } from '../commands/init';
 import { DEFAULT_MEMORY_DEST, type ScaffoldPlan } from '../commands/scaffold';
 import { type AgentInfo, detectInstalledAgentIds, getAgent } from '../core/agents';
-import type { CatalogData, McpEntry } from '../core/catalog';
+import type { CatalogData, McpEntry, SkillEntry } from '../core/catalog';
 
 function toAgents(ids: string[]): AgentInfo[] {
   return ids.map(getAgent).filter((a): a is AgentInfo => Boolean(a));
@@ -120,6 +120,7 @@ export async function promptScaffoldSelection(catalog: CatalogData): Promise<Sca
       { value: 'claude-md', label: 'CLAUDE.md', hint: 'Claude Code instructions' },
       { value: 'agents-md', label: 'AGENTS.md', hint: 'Codex / OpenCode instructions' },
       { value: 'memory', label: 'Skill memory file', hint: DEFAULT_MEMORY_DEST },
+      { value: 'skills', label: 'Skills', hint: 'install into the repo (project-scoped)' },
       { value: 'mcp', label: 'Project .mcp.json', hint: 'Claude project MCPs' },
       { value: 'opencode', label: 'Project opencode.json', hint: 'OpenCode project MCPs' },
       { value: 'gitignore', label: 'Merge .gitignore', hint: 'agent caches' },
@@ -142,6 +143,21 @@ export async function promptScaffoldSelection(catalog: CatalogData): Promise<Sca
     mcps = catalog.mcps.filter((m) => picked.includes(m.id));
   }
 
+  let skills: SkillEntry[] = [];
+  if (want('skills') && catalog.skills.length) {
+    const picked = await multiselect({
+      message: 'Which skills to install into the repo?',
+      options: catalog.skills.map((s) => ({
+        value: s.id,
+        label: s.label ?? s.skill,
+        hint: s.agents ? `${s.agents.join('/')} only` : undefined,
+      })),
+      required: false,
+    });
+    if (isCancel(picked)) return abort();
+    skills = catalog.skills.filter((s) => picked.includes(s.id));
+  }
+
   const plan: ScaffoldPlan = {
     withClaudeMd: want('claude-md'),
     withAgentsMd: want('agents-md'),
@@ -149,12 +165,14 @@ export async function promptScaffoldSelection(catalog: CatalogData): Promise<Sca
     withOpencode: want('opencode'),
     withGitignore: want('gitignore'),
     mcps,
+    skills,
     memoryDest: DEFAULT_MEMORY_DEST,
   };
 
   note(
     [
       `Docs:     ${[plan.withClaudeMd && 'CLAUDE.md', plan.withAgentsMd && 'AGENTS.md', plan.withMemory && 'memory'].filter(Boolean).join(', ') || pc.dim('none')}`,
+      `Skills:   ${skills.length ? skills.map((s) => s.id).join(', ') : pc.dim('none')}`,
       `MCPs:     ${mcps.length ? mcps.map((m) => m.id).join(', ') : pc.dim('none')}${plan.withOpencode ? pc.dim(' (+opencode.json)') : ''}`,
       `gitignore: ${plan.withGitignore ? 'merge' : pc.dim('skip')}`,
     ].join('\n'),
