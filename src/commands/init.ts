@@ -21,6 +21,7 @@ import {
   type SkillEntry,
   loadCatalog,
   looksLikePlaceholder,
+  mcpAppliesTo,
 } from '../core/catalog';
 import { isDryRun, log } from '../core/fsx';
 import {
@@ -134,10 +135,15 @@ export async function runInitCommand(opts: InitOptions): Promise<void> {
 }
 
 async function configureAgent(agent: AgentInfo, sel: Selection): Promise<void> {
-  // MCPs
+  // MCPs (respecting per-MCP agent scoping)
   if (agent.supports.mcp) {
-    for (const m of sel.mcps) {
+    const applicable = sel.mcps.filter((m) => mcpAppliesTo(m, agent.id));
+    for (const m of applicable) {
       await runAction(await buildUserMcpAction(agent, m));
+    }
+    const scopedOut = sel.mcps.length - applicable.length;
+    if (scopedOut > 0) {
+      log.plain(`   ${pc.dim(`· ${scopedOut} MCP(s) not scoped to ${agent.id}`)}`);
     }
   } else if (sel.mcps.length) {
     log.plain(`   ${pc.dim('· skip MCPs — unsupported')}`);

@@ -255,7 +255,9 @@ var McpHttpSchema = z.object({
   transport: z.literal("http"),
   url: z.string().min(1),
   headers: z.record(z.string(), z.string()).default({}),
-  env: z.array(z.string()).default([])
+  env: z.array(z.string()).default([]),
+  /** Restrict this MCP to specific agents (omit = all agents). */
+  agents: z.array(z.string()).optional()
 });
 var McpStdioSchema = z.object({
   id: z.string().min(1),
@@ -263,7 +265,9 @@ var McpStdioSchema = z.object({
   transport: z.literal("stdio"),
   command: z.string().min(1),
   args: z.array(z.string()).default([]),
-  env: z.array(z.string()).default([])
+  env: z.array(z.string()).default([]),
+  /** Restrict this MCP to specific agents (omit = all agents). */
+  agents: z.array(z.string()).optional()
 });
 var McpSchema = z.discriminatedUnion("transport", [McpHttpSchema, McpStdioSchema]);
 var SkillSchema = z.object({
@@ -341,6 +345,9 @@ ${details}`);
 }
 function looksLikePlaceholder(value) {
   return /<[^>]+>/.test(value);
+}
+function mcpAppliesTo(mcp, agentId) {
+  return !mcp.agents || mcp.agents.includes(agentId);
 }
 
 // src/core/plugins.ts
@@ -792,9 +799,15 @@ async function runScaffoldCommand(opts) {
     );
   }
   if (plan.mcps.length) {
-    actions.push(await buildProjectMcpAction(plan.mcps, { file: ".mcp.json", format: "claude" }));
+    const claudeMcps = plan.mcps.filter((m) => mcpAppliesTo(m, "claude-code"));
+    if (claudeMcps.length) {
+      actions.push(await buildProjectMcpAction(claudeMcps, { file: ".mcp.json", format: "claude" }));
+    }
     if (plan.withOpencode) {
-      actions.push(await buildProjectMcpAction(plan.mcps, { file: "opencode.json", format: "opencode" }));
+      const opencodeMcps = plan.mcps.filter((m) => mcpAppliesTo(m, "opencode"));
+      if (opencodeMcps.length) {
+        actions.push(await buildProjectMcpAction(opencodeMcps, { file: "opencode.json", format: "opencode" }));
+      }
     }
   }
   if (plan.withGitignore) {
@@ -814,7 +827,7 @@ function toAgents(ids) {
   return ids.map(getAgent).filter((a) => Boolean(a));
 }
 function mcpHint(m) {
-  return m.transport;
+  return m.agents ? `${m.transport} \xB7 ${m.agents.join("/")} only` : m.transport;
 }
 async function promptInitSelection(catalog) {
   intro(pc4.bgCyan(pc4.black(" agent-harness ")));
@@ -997,8 +1010,13 @@ async function runInitCommand(opts) {
 }
 async function configureAgent(agent, sel) {
   if (agent.supports.mcp) {
-    for (const m of sel.mcps) {
+    const applicable = sel.mcps.filter((m) => mcpAppliesTo(m, agent.id));
+    for (const m of applicable) {
       await runAction(await buildUserMcpAction(agent, m));
+    }
+    const scopedOut = sel.mcps.length - applicable.length;
+    if (scopedOut > 0) {
+      log.plain(`   ${pc5.dim(`\xB7 ${scopedOut} MCP(s) not scoped to ${agent.id}`)}`);
     }
   } else if (sel.mcps.length) {
     log.plain(`   ${pc5.dim("\xB7 skip MCPs \u2014 unsupported")}`);

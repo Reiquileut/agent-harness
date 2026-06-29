@@ -8,7 +8,7 @@
 import process from 'node:process';
 import pc from 'picocolors';
 import { type Action, runActions } from '../core/actions';
-import { type CatalogData, type McpEntry, loadCatalog } from '../core/catalog';
+import { type CatalogData, type McpEntry, loadCatalog, mcpAppliesTo } from '../core/catalog';
 import { isDryRun, log } from '../core/fsx';
 import { buildProjectMcpAction } from '../core/mcp';
 import { buildGitignoreMergeAction, buildTemplateCopyAction } from '../core/templates';
@@ -117,9 +117,15 @@ export async function runScaffoldCommand(opts: ScaffoldOptions): Promise<void> {
     );
   }
   if (plan.mcps.length) {
-    actions.push(await buildProjectMcpAction(plan.mcps, { file: '.mcp.json', format: 'claude' }));
+    const claudeMcps = plan.mcps.filter((m) => mcpAppliesTo(m, 'claude-code'));
+    if (claudeMcps.length) {
+      actions.push(await buildProjectMcpAction(claudeMcps, { file: '.mcp.json', format: 'claude' }));
+    }
     if (plan.withOpencode) {
-      actions.push(await buildProjectMcpAction(plan.mcps, { file: 'opencode.json', format: 'opencode' }));
+      const opencodeMcps = plan.mcps.filter((m) => mcpAppliesTo(m, 'opencode'));
+      if (opencodeMcps.length) {
+        actions.push(await buildProjectMcpAction(opencodeMcps, { file: 'opencode.json', format: 'opencode' }));
+      }
     }
   }
   if (plan.withGitignore) {
