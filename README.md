@@ -70,15 +70,21 @@ node dist/cli.js init
 
 ## The two commands
 
-### `agent-harness init` — machine level
+### `agent-harness init` — the installer (default)
 
-Configures agents globally: user-scope MCP servers, skills, and plugins, then
-prints the auth block.
+The bare `npx github:reiquileut/agent-harness` runs this. **Interactive:** pick
+your agents, then one menu with two groups — check anything from either:
 
-Interactive (default): detects installed agents, lets you multiselect agents +
-catalog items, confirms, installs.
+- **Nesta máquina** (all projects): user-scope MCP servers, global skills, plugins.
+- **Neste repositório**: `CLAUDE.md`, `AGENTS.md`, skill memory, project skills,
+  and `.mcp.json`/`opencode.json`.
 
-Non-interactive (CI / scripted):
+It installs the machine items **and** sets up the current repo in one pass, then
+prints the login block. So you can run it inside an existing repo and add *only*
+CLAUDE.md + AGENTS.md + skills, for example.
+
+**Non-interactive** `init` flags below stay **machine-only** (use `scaffold` for
+repo-only, flag-driven runs):
 
 ```bash
 agent-harness init \

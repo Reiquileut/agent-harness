@@ -1,9 +1,14 @@
 /**
- * prompts — the interactive clack flow for `init` (and the scaffold helper).
+ * prompts — the interactive clack flow.
  *
- * Values are namespaced (`mcp:`, `skill:`, `plugin:`) so the grouped multiselect
- * never collides when an MCP and a skill share an id (e.g. "obsidian-cli").
+ * The unified `init` menu has two groups — "Nesta máquina" (user-scope MCPs,
+ * global skills, plugins) and "Neste repositório" (CLAUDE.md, AGENTS.md, project
+ * skills, project .mcp.json). Values are namespaced (`mcp:`, `mskill:`,
+ * `plugin:`, `doc:*`, `pskill:`, `projmcp`, `gitignore`) so nothing collides when
+ * an MCP and a skill share an id, or a skill appears at both scopes.
  */
+import path from 'node:path';
+import process from 'node:process';
 import {
   cancel,
   confirm,
@@ -27,88 +32,124 @@ function mcpHint(m: McpEntry): string {
   return m.agents ? `${m.transport} · ${m.agents.join('/')} only` : m.transport;
 }
 
+type GroupOption = { value: string; label: string; hint?: string };
+
+function skillHint(s: SkillEntry, scope: string): string {
+  return s.agents ? `${s.agents.join('/')} · ${scope}` : scope;
+}
+
+/** Two-group option set: "Nesta máquina" (global) and "Neste repositório". */
+function buildUnifiedGroups(catalog: CatalogData): Record<string, GroupOption[]> {
+  const groups: Record<string, GroupOption[]> = {};
+
+  const machine: GroupOption[] = [];
+  for (const m of catalog.mcps) machine.push({ value: `mcp:${m.id}`, label: m.label, hint: mcpHint(m) });
+  for (const p of catalog.plugins) machine.push({ value: `plugin:${p.id}`, label: p.label ?? p.id, hint: p.agent });
+  for (const s of catalog.skills) machine.push({ value: `mskill:${s.id}`, label: s.label ?? s.skill, hint: skillHint(s, 'global') });
+  if (machine.length) groups['Nesta máquina (todos os projetos)'] = machine;
+
+  const repo: GroupOption[] = [
+    { value: 'doc:claude', label: 'CLAUDE.md', hint: 'Claude Code' },
+    { value: 'doc:agents', label: 'AGENTS.md', hint: 'Codex / OpenCode' },
+    { value: 'doc:memory', label: 'Skill memory', hint: DEFAULT_MEMORY_DEST },
+  ];
+  for (const s of catalog.skills) repo.push({ value: `pskill:${s.id}`, label: s.label ?? s.skill, hint: skillHint(s, 'repo') });
+  if (catalog.mcps.length) repo.push({ value: 'projmcp', label: '.mcp.json + opencode.json', hint: 'as MCPs marcadas acima' });
+  repo.push({ value: 'gitignore', label: 'Merge .gitignore', hint: 'agent caches' });
+  groups[`Neste repositório (${path.basename(process.cwd())})`] = repo;
+
+  return groups;
+}
+
+/** Pure: turn the namespaced menu values into a Selection (machine + optional repo). */
+export function parseUnifiedSelection(
+  catalog: CatalogData,
+  agents: AgentInfo[],
+  values: string[],
+): Selection {
+  const has = (v: string) => values.includes(v);
+  const ids = (prefix: string) =>
+    values.filter((v) => v.startsWith(prefix)).map((v) => v.slice(prefix.length));
+
+  const mcps = catalog.mcps.filter((m) => ids('mcp:').includes(m.id));
+  const repoSkillIds = ids('pskill:');
+  const wantRepo =
+    has('doc:claude') || has('doc:agents') || has('doc:memory') || repoSkillIds.length > 0 || has('projmcp');
+
+  const repo: ScaffoldPlan | undefined = wantRepo
+    ? {
+        withClaudeMd: has('doc:claude'),
+        withAgentsMd: has('doc:agents'),
+        withMemory: has('doc:memory'),
+        withOpencode: has('projmcp'),
+        withGitignore: has('gitignore'),
+        mcps: has('projmcp') ? mcps : [],
+        skills: catalog.skills.filter((s) => repoSkillIds.includes(s.id)),
+        memoryDest: DEFAULT_MEMORY_DEST,
+      }
+    : undefined;
+
+  return {
+    agents,
+    mcps,
+    skills: catalog.skills.filter((s) => ids('mskill:').includes(s.id)),
+    plugins: catalog.plugins.filter((p) => ids('plugin:').includes(p.id)),
+    repo,
+  };
+}
+
+function unifiedSummary(sel: Selection): string {
+  const names = (arr: Array<{ id: string }>) => (arr.length ? arr.map((x) => x.id).join(', ') : pc.dim('none'));
+  const lines = [
+    `Agentes:  ${sel.agents.map((a) => a.label).join(', ')}`,
+    `Máquina:  MCPs ${names(sel.mcps)} · skills ${names(sel.skills)} · plugins ${names(sel.plugins)}`,
+  ];
+  if (sel.repo) {
+    const docs =
+      [sel.repo.withClaudeMd && 'CLAUDE.md', sel.repo.withAgentsMd && 'AGENTS.md', sel.repo.withMemory && 'memory']
+        .filter(Boolean)
+        .join(', ') || pc.dim('none');
+    lines.push(`Repo:     ${docs} · skills ${names(sel.repo.skills)}${sel.repo.mcps.length ? ' · .mcp.json' : ''}`);
+  }
+  return lines.join('\n');
+}
+
 export async function promptInitSelection(catalog: CatalogData): Promise<Selection | null> {
   intro(pc.bgCyan(pc.black(' agent-harness ')));
 
   const detected = new Set(detectInstalledAgentIds());
-  const agentOptions = catalog.agents.map((id) => {
-    const a = getAgent(id);
-    return {
-      value: id,
-      label: a?.label ?? id,
-      hint: detected.has(id) ? 'detected' : undefined,
-    };
-  });
-
   const agentSel = await multiselect({
-    message: 'Which agents do you want to configure?',
-    options: agentOptions,
+    message: 'Quais agentes configurar?',
+    options: catalog.agents.map((id) => ({
+      value: id,
+      label: getAgent(id)?.label ?? id,
+      hint: detected.has(id) ? 'detected' : undefined,
+    })),
     initialValues: catalog.agents.filter((id) => detected.has(id)),
     required: true,
   });
   if (isCancel(agentSel)) return abort();
+  const agents = toAgents(agentSel);
 
-  // Grouped catalog items
-  const options: Record<string, Array<{ value: string; label: string; hint?: string }>> = {};
-  if (catalog.mcps.length) {
-    options['MCP servers'] = catalog.mcps.map((m) => ({
-      value: `mcp:${m.id}`,
-      label: m.label,
-      hint: mcpHint(m),
-    }));
-  }
-  if (catalog.skills.length) {
-    options['Skills'] = catalog.skills.map((s) => ({
-      value: `skill:${s.id}`,
-      label: s.label ?? s.skill,
-      hint: s.agents ? `${s.agents.join('/')} only` : undefined,
-    }));
-  }
-  if (catalog.plugins.length) {
-    options['Plugins'] = catalog.plugins.map((p) => ({
-      value: `plugin:${p.id}`,
-      label: p.label ?? p.id,
-      hint: p.agent,
-    }));
-  }
-
+  const groups = buildUnifiedGroups(catalog);
   let chosen: string[] = [];
-  if (Object.keys(options).length) {
+  if (Object.keys(groups).length) {
     const picked = await groupMultiselect({
-      message: 'Select items to install (space to toggle, enter to confirm):',
-      options,
+      message: 'Marque o que instalar (espaço alterna, enter confirma):',
+      options: groups,
       required: false,
-      selectableGroups: true,
+      selectableGroups: false,
     });
     if (isCancel(picked)) return abort();
     chosen = picked;
   }
 
-  const has = (prefix: string) => chosen.filter((v) => v.startsWith(prefix)).map((v) => v.slice(prefix.length));
-  const mcpIds = has('mcp:');
-  const skillIds = has('skill:');
-  const pluginIds = has('plugin:');
+  const sel = parseUnifiedSelection(catalog, agents, chosen);
+  note(unifiedSummary(sel), 'Resumo');
 
-  const agents = toAgents(agentSel);
-  note(
-    [
-      `Agents:  ${agents.map((a) => a.label).join(', ')}`,
-      `MCPs:    ${mcpIds.length ? mcpIds.join(', ') : pc.dim('none')}`,
-      `Skills:  ${skillIds.length ? skillIds.join(', ') : pc.dim('none')}`,
-      `Plugins: ${pluginIds.length ? pluginIds.join(', ') : pc.dim('none')}`,
-    ].join('\n'),
-    'Summary',
-  );
-
-  const ok = await confirm({ message: 'Proceed with installation?' });
+  const ok = await confirm({ message: 'Prosseguir com a instalação?' });
   if (isCancel(ok) || !ok) return abort();
-
-  return {
-    agents,
-    mcps: catalog.mcps.filter((m) => mcpIds.includes(m.id)),
-    skills: catalog.skills.filter((s) => skillIds.includes(s.id)),
-    plugins: catalog.plugins.filter((p) => pluginIds.includes(p.id)),
-  };
+  return sel;
 }
 
 export async function promptScaffoldSelection(catalog: CatalogData): Promise<ScaffoldPlan | null> {

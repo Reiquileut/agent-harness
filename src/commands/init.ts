@@ -36,6 +36,7 @@ import {
   hasLocalSkill,
   isLocalSkill,
 } from '../core/skills';
+import { type ScaffoldPlan, buildScaffoldActions } from './scaffold';
 import { promptInitSelection } from '../ui/prompts';
 
 export interface InitOptions {
@@ -49,9 +50,12 @@ export interface InitOptions {
 
 export interface Selection {
   agents: AgentInfo[];
+  /** Machine (user-scope) selections. */
   mcps: McpEntry[];
   skills: SkillEntry[];
   plugins: PluginEntry[];
+  /** Optional repo-level setup (interactive unified flow); flags leave it unset. */
+  repo?: ScaffoldPlan;
 }
 
 /** Resolve a selection purely from flags (non-interactive). */
@@ -130,6 +134,15 @@ export async function runInitCommand(opts: InitOptions): Promise<void> {
     log.plain('');
     log.step(pc.bold(agent.label));
     await configureAgent(agent, selection);
+  }
+
+  if (selection.repo) {
+    const repoActions = await buildScaffoldActions(catalog, selection.repo);
+    if (repoActions.length) {
+      log.plain('');
+      log.step(pc.bold(`Neste repositório (${process.cwd()})`));
+      await runActions(repoActions);
+    }
   }
 
   printAuthBlock(selection);
@@ -214,7 +227,7 @@ function printAuthBlock(sel: Selection): void {
   }
   log.plain('');
   log.plain(pc.dim('  MCPs with OAuth (Notion, Google…) authenticate on first tool use.'));
-  const envs = requiredEnvVars(sel.mcps);
+  const envs = requiredEnvVars([...sel.mcps, ...(sel.repo?.mcps ?? [])]);
   if (envs.length) {
     log.plain(pc.dim(`  MCPs needing API keys — export in your shell/.env: ${envs.join(', ')}`));
   }
