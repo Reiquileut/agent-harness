@@ -2,51 +2,100 @@
   "agents": ["claude-code", "codex", "opencode"],
   "mcps": [
     {
-      "id": "context7",
-      "label": "Context7 — up-to-date library docs",
+      "id": "n8n-mcp",
+      "label": "n8n-mcp — build & manage n8n workflows",
+      "transport": "stdio",
+      "command": "npx",
+      "args": ["-y", "n8n-mcp@latest"],
+      "env": ["N8N_API_URL", "N8N_API_KEY"]
+    },
+    {
+      "id": "figma",
+      "label": "Figma — design context (OAuth on first use)",
       "transport": "http",
-      "url": "https://mcp.context7.com/mcp",
+      "url": "https://mcp.figma.com/mcp",
       "headers": {},
       "env": []
     },
     {
-      "id": "playwright",
-      "label": "Playwright — browser automation",
+      "id": "chrome-devtools",
+      "label": "Chrome DevTools — inspect/debug a live browser",
       "transport": "stdio",
       "command": "npx",
-      "args": ["-y", "@playwright/mcp"],
+      "args": ["-y", "chrome-devtools-mcp@latest"],
       "env": []
     },
     {
-      "id": "obsidian-cli",
-      "label": "Obsidian CLI — read/write your vault",
+      "id": "pencil",
+      "label": "Pencil — .pen design editor (Windows + Claude only)",
       "transport": "stdio",
-      "command": "npx",
-      "args": ["-y", "<obsidian-mcp-package>"],
-      "env": ["OBSIDIAN_VAULT_PATH"]
+      "command": "${LOCALAPPDATA}\\Programs\\Pencil\\resources\\app.asar.unpacked\\out\\mcp-server-windows-x64.exe",
+      "args": ["--app", "desktop", "--agent", "claudeCodeCLI"],
+      "env": []
     }
   ],
   "skills": [
     {
-      "id": "obsidian-cli",
-      "label": "Obsidian CLI skill",
-      "source": "kepano/obsidian-skills",
-      "skill": "obsidian-cli"
+      "id": "anti-ai-slop",
+      "label": "Anti-AI-Slop — premium landing/UI design (PT)",
+      "source": "local",
+      "skill": "anti-ai-slop"
     },
     {
-      "id": "my-skill",
-      "label": "My personal skill",
-      "source": "reiquileut/<skills-repo>",
-      "skill": "<skill-name>"
+      "id": "prd",
+      "label": "PRD — generate product requirements docs",
+      "source": "local",
+      "skill": "prd"
     }
   ],
   "plugins": [
     {
-      "id": "r2t-marketplace",
-      "label": "r2t marketplace plugins",
+      "id": "claude-official",
+      "label": "Claude official: context7, github, frontend-design, playwright",
       "agent": "claude-code",
-      "marketplace": "reiquileut/r2t-marketplace",
-      "install": ["<plugin1>", "<plugin2>"]
+      "marketplace": "anthropics/claude-plugins-official",
+      "name": "claude-plugins-official",
+      "install": ["context7", "github", "frontend-design", "playwright"]
+    },
+    {
+      "id": "n8n-mcp-skills",
+      "label": "n8n-mcp skills pack",
+      "agent": "claude-code",
+      "marketplace": "czlonkowski/n8n-skills",
+      "name": "n8n-mcp-skills",
+      "install": ["n8n-mcp-skills"]
+    },
+    {
+      "id": "openai-codex",
+      "label": "OpenAI Codex plugin (codex rescue/setup)",
+      "agent": "claude-code",
+      "marketplace": "openai/codex-plugin-cc",
+      "name": "openai-codex",
+      "install": ["codex"]
+    },
+    {
+      "id": "taskmaster",
+      "label": "Task Master — task orchestration",
+      "agent": "claude-code",
+      "marketplace": "eyaltoledano/claude-task-master",
+      "name": "taskmaster",
+      "install": ["taskmaster"]
+    },
+    {
+      "id": "obsidian-skills",
+      "label": "Obsidian skills (kepano)",
+      "agent": "claude-code",
+      "marketplace": "kepano/obsidian-skills",
+      "name": "obsidian-skills",
+      "install": ["obsidian"]
+    },
+    {
+      "id": "claude-code-warp",
+      "label": "Warp for Claude Code",
+      "agent": "claude-code",
+      "marketplace": "warpdotdev/claude-code-warp",
+      "name": "claude-code-warp",
+      "install": ["warp"]
     }
   ],
   "templates": {
@@ -60,4 +109,3 @@
     ".agent-harness/"
   ]
 }
-

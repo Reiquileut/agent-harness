@@ -14,6 +14,11 @@ import { expandHome, pathExists, readText } from './fsx';
 
 export type SkillScope = 'user' | 'project';
 
+/** Skills with source "local" are bundled in assets/skills/<id>/ and copied directly. */
+export function isLocalSkill(skill: SkillEntry): boolean {
+  return skill.source === 'local';
+}
+
 /**
  * Primary install: `npx --yes skills add <source> --skill <skill> -a <agent> [-g] -y`.
  * `--yes` auto-confirms npx's package download; trailing `-y` auto-confirms the
@@ -56,16 +61,17 @@ async function listFilesRecursive(dir: string): Promise<string[]> {
 }
 
 /**
- * Fallback: copy a locally-shipped skill (assets/skills/<id>/) directly into the
- * agent's documented skills directory. Returns one file action per file, or a
- * single warning note when there's nothing local to copy.
+ * Copy a locally-bundled skill (assets/skills/<id>/) directly into the agent's
+ * documented skills directory. Used both as the primary path for source:"local"
+ * skills and as the fallback when `npx skills` fails. Returns one file action
+ * per file, or a single warning note when there's nothing local to copy.
  */
-export async function buildSkillFallbackActions(
+export async function buildLocalSkillCopyActions(
   agent: AgentInfo,
   skill: SkillEntry,
   scope: SkillScope,
 ): Promise<Action[]> {
-  const label = `Skill ${skill.skill} → ${agent.label} (fallback)`;
+  const label = `Skill ${skill.skill} → ${agent.label} (local copy)`;
   const srcDir = localSkillDir(skill);
   if (!pathExists(srcDir)) {
     return [
@@ -73,7 +79,7 @@ export async function buildSkillFallbackActions(
         kind: 'note',
         level: 'warn',
         label,
-        message: `\`npx skills\` failed and no local copy at assets/skills/${skill.id}/ — install this skill manually.`,
+        message: `No local copy at assets/skills/${skill.id}/ — install this skill manually.`,
       },
     ];
   }
