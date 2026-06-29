@@ -83,7 +83,7 @@ Non-interactive (CI / scripted):
 ```bash
 agent-harness init \
   --agent claude-code --agent codex \
-  --mcp n8n-mcp --mcp figma \
+  --mcp figma --mcp chrome-devtools \
   --skill prd \
   --plugin claude-official \
   -y
@@ -102,7 +102,7 @@ project `.mcp.json` (and optionally `opencode.json`), and merges `.gitignore`.
 
 ```bash
 agent-harness scaffold                                          # interactive
-agent-harness scaffold --with-claude-md --with-agents-md --mcp n8n-mcp -y
+agent-harness scaffold --with-claude-md --with-agents-md --mcp figma -y
 agent-harness scaffold --all -y                                 # all docs + all catalog MCPs
 agent-harness scaffold --all --dry-run
 ```
@@ -150,17 +150,16 @@ touching code. MCP entries are transport-neutral. Annotated excerpt:
   "agents": ["claude-code", "codex", "opencode"],
   "mcps": [
     // cross-agent — installed for every selected agent
-    { "id": "n8n-mcp", "label": "n8n-mcp", "transport": "stdio",
-      "command": "npx", "args": ["-y", "n8n-mcp@latest"],
-      "env": ["N8N_API_URL", "N8N_API_KEY"] },   // env = var NAMES only; passed through, never stored
+    { "id": "chrome-devtools", "label": "Chrome DevTools", "transport": "stdio",
+      "command": "npx", "args": ["-y", "chrome-devtools-mcp@latest"], "env": [] },
     { "id": "figma", "label": "Figma", "transport": "http",
       "url": "https://mcp.figma.com/mcp", "headers": {}, "env": [] },
 
     // claude-only — the `agents` allowlist scopes it (omit = all agents)
     { "id": "stitch", "label": "Stitch", "transport": "http",
       "url": "https://stitch.googleapis.com/mcp",
-      "headers": { "X-Goog-Api-Key": "${STITCH_API_KEY}" },
-      "env": ["STITCH_API_KEY"], "agents": ["claude-code"] }
+      "headers": { "X-Goog-Api-Key": "${STITCH_API_KEY}" },   // ${VAR} expands at runtime
+      "env": ["STITCH_API_KEY"], "agents": ["claude-code"] }   // env = var NAMES only; never stored
   ],
   "skills": [
     { "id": "anti-ai-slop", "source": "local", "skill": "anti-ai-slop" },   // bundled in assets/skills/<id>/
@@ -196,7 +195,7 @@ still looks like a `<placeholder>`.
 
 It mirrors a real Claude Code setup, so a fresh machine reproduces it:
 
-- **MCPs** — `n8n-mcp`, `figma`, `chrome-devtools` (cross-agent) · `pencil`, `puppeteer`, `stitch` (Claude only).
+- **MCPs** — `figma`, `chrome-devtools` (cross-agent) · `pencil`, `stitch` (Claude only).
 - **Skills** — `anti-ai-slop`, `prd` (cross-agent) · `impeccable` (Claude only; **Apache-2.0**; bundled).
 - **Plugins** — 6 Claude marketplaces: `claude-plugins-official`, `n8n-skills`, `openai-codex`, `taskmaster`, `obsidian-skills`, `claude-code-warp`.
 - **Docs** — `CLAUDE.md` and `AGENTS.md` both write the **Clean Code for Agents** standard (`assets/templates/clean-code-for-agents.md`).
@@ -215,7 +214,7 @@ you installed, e.g.:
   OpenCode     →  opencode auth login
 
   MCPs with OAuth (Notion, Google…) authenticate on first tool use.
-  MCPs needing API keys — export in your shell/.env: N8N_API_URL, N8N_API_KEY
+  MCPs needing API keys — export in your shell/.env: STITCH_API_KEY
 ```
 
 ---

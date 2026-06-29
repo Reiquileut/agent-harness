@@ -2,14 +2,6 @@
   "agents": ["claude-code", "codex", "opencode"],
   "mcps": [
     {
-      "id": "n8n-mcp",
-      "label": "n8n-mcp — build & manage n8n workflows",
-      "transport": "stdio",
-      "command": "npx",
-      "args": ["-y", "n8n-mcp@latest"],
-      "env": ["N8N_API_URL", "N8N_API_KEY"]
-    },
-    {
       "id": "figma",
       "label": "Figma — design context (OAuth on first use)",
       "transport": "http",
@@ -32,15 +24,6 @@
       "command": "${LOCALAPPDATA}\\Programs\\Pencil\\resources\\app.asar.unpacked\\out\\mcp-server-windows-x64.exe",
       "args": ["--app", "desktop", "--agent", "claudeCodeCLI"],
       "env": [],
-      "agents": ["claude-code"]
-    },
-    {
-      "id": "puppeteer",
-      "label": "Puppeteer via Smithery — browser automation",
-      "transport": "stdio",
-      "command": "npx",
-      "args": ["-y", "@smithery/cli@latest", "run", "@smithery-ai/puppeteer", "--key", "${SMITHERY_KEY}"],
-      "env": ["SMITHERY_KEY"],
       "agents": ["claude-code"]
     },
     {
