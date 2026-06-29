@@ -1,0 +1,9 @@
+{
+  "$comment": "OPTIONAL. Deploying this repo to Vercel serves install.sh from the domain root, so `curl -fsSL https://harness.r2t.dev | bash` works (bun.sh / get.docker.com style). The CLI itself stays in the repo — Vercel only serves the bootstrap script. Remove this file if you don't want the curl|bash path.",
+  "rewrites": [
+    {
+      "source": "/",
+      "destination": "https://raw.githubusercontent.com/reiquileut/agent-harness/main/install.sh"
+    }
+  ]
+}
