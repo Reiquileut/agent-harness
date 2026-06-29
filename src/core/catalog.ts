@@ -42,10 +42,12 @@ const McpSchema = z.discriminatedUnion('transport', [McpHttpSchema, McpStdioSche
 const SkillSchema = z.object({
   id: z.string().min(1),
   label: z.string().optional(),
-  /** owner/repo, URL, or local dir passed to `npx skills add`. */
+  /** owner/repo, URL, local dir, or "local" (bundled in assets/skills/<id>/). */
   source: z.string().min(1),
   /** the specific skill name inside that source. */
   skill: z.string().min(1),
+  /** Restrict this skill to specific agents (omit = all agents). */
+  agents: z.array(z.string()).optional(),
 });
 
 const PluginSchema = z.object({
@@ -142,7 +144,17 @@ export function looksLikePlaceholder(value: string): boolean {
   return /<[^>]+>/.test(value);
 }
 
+/** True when an optional agents-allowlist permits this agent (omit = all). */
+export function appliesToAgent(agents: string[] | undefined, agentId: string): boolean {
+  return !agents || agents.includes(agentId);
+}
+
 /** True when an MCP entry should be installed for the given agent. */
 export function mcpAppliesTo(mcp: McpEntry, agentId: string): boolean {
-  return !mcp.agents || mcp.agents.includes(agentId);
+  return appliesToAgent(mcp.agents, agentId);
+}
+
+/** True when a skill entry should be installed for the given agent. */
+export function skillAppliesTo(skill: SkillEntry, agentId: string): boolean {
+  return appliesToAgent(skill.agents, agentId);
 }

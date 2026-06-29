@@ -61,6 +61,7 @@ export async function promptInitSelection(catalog: CatalogData): Promise<Selecti
     options['Skills'] = catalog.skills.map((s) => ({
       value: `skill:${s.id}`,
       label: s.label ?? s.skill,
+      hint: s.agents ? `${s.agents.join('/')} only` : undefined,
     }));
   }
   if (catalog.plugins.length) {
