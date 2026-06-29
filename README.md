@@ -1,5 +1,7 @@
 # agent-harness
 
+[![CI](https://github.com/Reiquileut/agent-harness/actions/workflows/ci.yml/badge.svg)](https://github.com/Reiquileut/agent-harness/actions/workflows/ci.yml)
+
 > **Dotfiles for AI agents + bootstrapper.** One command on a fresh machine:
 > pick which agents to configure (Claude Code, Codex, OpenCode) and which catalog
 > items to install (MCPs, skills, plugins), and `agent-harness` writes each one
