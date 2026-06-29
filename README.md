@@ -13,15 +13,21 @@ so the tool prepares everything and **prints the exact login block** at the end.
 
 ## Install & run
 
-**Run straight from GitHub (no install, no clone):**
+**Run straight from GitHub (no install, no clone) — from any machine with Node ≥ 20:**
 
 ```bash
-pnpm dlx github:reiquileut/agent-harness init
+# npm / npx (npx ships with Node)
+npx github:reiquileut/agent-harness            # opens the installer (init)
+npx github:reiquileut/agent-harness scaffold
+
+# pnpm
+pnpm dlx github:reiquileut/agent-harness       # opens the installer (init)
 pnpm dlx github:reiquileut/agent-harness scaffold
 ```
 
-The repo ships a prebuilt `dist/`, so this works regardless of your pnpm version
-(no build step needed at install time).
+`init` is the **default command**, so the bare command opens the interactive menu.
+The repo ships a **committed, prebuilt `dist/`**, so nothing builds at install time —
+it works regardless of your npm/pnpm version.
 
 **Or clone and build:**
 
