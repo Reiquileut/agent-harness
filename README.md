@@ -97,23 +97,27 @@ Flags: repeatable `--agent/-a`, `--mcp`, `--skill`, `--plugin`; plus `--all`,
 
 ### `agent-harness scaffold` — repo level
 
-Run inside a project. Drops `CLAUDE.md`, `AGENTS.md`, a skill memory file, a
-project `.mcp.json` (and optionally `opencode.json`), and merges `.gitignore`.
+Run inside any project (new or **existing**) to add **just the pieces you pick**:
+`CLAUDE.md`, `AGENTS.md`, a skill memory file, **project-scoped skills**, a
+project `.mcp.json` (and optionally `opencode.json`), and a `.gitignore` merge.
 
 ```bash
-agent-harness scaffold                                          # interactive
+agent-harness scaffold                                          # interactive menu
+# existing repo — add ONLY the docs + skills, nothing else:
+agent-harness scaffold --with-claude-md --with-agents-md --skill prd --skill impeccable --no-gitignore -y
 agent-harness scaffold --with-claude-md --with-agents-md --mcp figma -y
-agent-harness scaffold --all -y                                 # all docs + all catalog MCPs
-agent-harness scaffold --all --dry-run
+agent-harness scaffold --all -y                                 # everything in the catalog
 ```
 
 Flags: `--with-claude-md`, `--with-agents-md`, `--with-memory`, `--with-opencode`,
-repeatable `--mcp`, `--memory-dest <path>`, `--no-gitignore`, `--all`, `-y`,
-`--dry-run`, `--force`.
+repeatable `--mcp` and `--skill`, `--memory-dest <path>`, `--no-gitignore`,
+`--all`, `-y`, `--dry-run`, `--force`.
 
-Existing files are never clobbered (skipped unless `--force`); `.gitignore`
-entries merge under a managed block without duplicating. Claude-only MCPs (see
-`agents` below) land in `.mcp.json` but not `opencode.json`.
+Skills install project-scoped into each applicable agent's repo dir
+(`.claude/skills/`, `.agents/skills/`, `.opencode/skills/`; agent-scoped skills
+like `impeccable` go only where they apply). Existing files are never clobbered
+(skipped unless `--force`); `.gitignore` entries merge under a managed block
+without duplicating. Claude-only MCPs land in `.mcp.json` but not `opencode.json`.
 
 ---
 
