@@ -20,8 +20,7 @@ chk() { if eval "$2"; then echo "  PASS  $1"; else echo "  FAIL  $1"; fail=1; fi
 H="$(mktemp -d)"
 HOME="$H" USERPROFILE="$H" node "$CLI" init -y -a codex -a opencode --all >/dev/null 2>&1
 chk "codex config.toml created"          '[ -f "$H/.codex/config.toml" ]'
-chk "config.toml has n8n-mcp"            'grep -q "mcp_servers.n8n-mcp" "$H/.codex/config.toml"'
-chk "config.toml has env_vars passthrough" 'grep -q "env_vars" "$H/.codex/config.toml"'
+chk "config.toml has chrome-devtools"    'grep -q "mcp_servers.chrome-devtools" "$H/.codex/config.toml"'
 chk "opencode.json created"              '[ -f "$H/.config/opencode/opencode.json" ]'
 chk "opencode.json has \$schema"         'grep -q "opencode.ai/config.json" "$H/.config/opencode/opencode.json"'
 chk "anti-ai-slop copied to codex"       '[ -f "$H/.agents/skills/anti-ai-slop/SKILL.md" ]'
@@ -37,8 +36,8 @@ R="$(mktemp -d)"
 ( cd "$R" && node "$CLI" scaffold --all -y >/dev/null 2>&1 )
 chk "CLAUDE.md == AGENTS.md"             'diff -q "$R/CLAUDE.md" "$R/AGENTS.md" >/dev/null'
 chk "CLAUDE.md is clean-code doc"        'head -1 "$R/CLAUDE.md" | grep -q "Clean Code for Agents"'
-chk ".mcp.json has 6 servers"           '[ "$(keys "$R/.mcp.json" mcpServers)" = 6 ]'
-chk "opencode.json has 3 servers"       '[ "$(keys "$R/opencode.json" mcp)" = 3 ]'
+chk ".mcp.json has 4 servers"           '[ "$(keys "$R/.mcp.json" mcpServers)" = 4 ]'
+chk "opencode.json has 2 servers"       '[ "$(keys "$R/opencode.json" mcp)" = 2 ]'
 
 echo ""
 if [ "$fail" = 0 ]; then echo "E2E: all checks passed"; else echo "E2E: FAILURES above"; exit 1; fi
