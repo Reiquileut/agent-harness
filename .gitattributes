@@ -1,0 +1,13 @@
+# Normalize all text to LF in the repo and on checkout. Critical for the
+# committed dist/cli.js — a CRLF shebang (`#!/usr/bin/env node\r`) breaks on Unix.
+* text=auto eol=lf
+
+# Windows shims must stay CRLF.
+*.cmd text eol=crlf
+*.bat text eol=crlf
+*.ps1 text eol=crlf
+
+# Don't ship line-ending churn in lockfiles' eyes; keep binary-ish files untouched.
+*.png binary
+*.jpg binary
+*.gif binary

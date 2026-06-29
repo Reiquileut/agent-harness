@@ -1,0 +1,63 @@
+{
+  "agents": ["claude-code", "codex", "opencode"],
+  "mcps": [
+    {
+      "id": "context7",
+      "label": "Context7 — up-to-date library docs",
+      "transport": "http",
+      "url": "https://mcp.context7.com/mcp",
+      "headers": {},
+      "env": []
+    },
+    {
+      "id": "playwright",
+      "label": "Playwright — browser automation",
+      "transport": "stdio",
+      "command": "npx",
+      "args": ["-y", "@playwright/mcp"],
+      "env": []
+    },
+    {
+      "id": "obsidian-cli",
+      "label": "Obsidian CLI — read/write your vault",
+      "transport": "stdio",
+      "command": "npx",
+      "args": ["-y", "<obsidian-mcp-package>"],
+      "env": ["OBSIDIAN_VAULT_PATH"]
+    }
+  ],
+  "skills": [
+    {
+      "id": "obsidian-cli",
+      "label": "Obsidian CLI skill",
+      "source": "kepano/obsidian-skills",
+      "skill": "obsidian-cli"
+    },
+    {
+      "id": "my-skill",
+      "label": "My personal skill",
+      "source": "reiquileut/<skills-repo>",
+      "skill": "<skill-name>"
+    }
+  ],
+  "plugins": [
+    {
+      "id": "r2t-marketplace",
+      "label": "r2t marketplace plugins",
+      "agent": "claude-code",
+      "marketplace": "reiquileut/r2t-marketplace",
+      "install": ["<plugin1>", "<plugin2>"]
+    }
+  ],
+  "templates": {
+    "claude_md": "templates/CLAUDE.md",
+    "agents_md": "templates/AGENTS.md",
+    "memory": "templates/memory.md"
+  },
+  "gitignore": [
+    ".claude/settings.local.json",
+    ".opencode/cache/",
+    ".agent-harness/"
+  ]
+}
+
