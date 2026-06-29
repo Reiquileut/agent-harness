@@ -17,6 +17,7 @@
     "build": "tsup",
     "dev": "tsup --watch",
     "typecheck": "tsc",
+    "test": "bash scripts/ci-e2e.sh",
     "prepack": "tsup",
     "start": "node dist/cli.js"
   },
