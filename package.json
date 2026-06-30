@@ -1,6 +1,6 @@
 {
   "name": "@r2t/agent-harness",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "Dotfiles-for-AI-agents bootstrapper: one command to configure MCPs, skills, and plugins across Claude Code, Codex, and OpenCode.",
   "type": "module",
   "bin": {

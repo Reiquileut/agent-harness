@@ -1,5 +1,6 @@
 import { Command } from 'commander';
 import process from 'node:process';
+import pkg from '../package.json';
 import { log, setRunContext } from './core/fsx';
 import { runInitCommand } from './commands/init';
 import { runScaffoldCommand } from './commands/scaffold';
@@ -14,7 +15,7 @@ const program = new Command();
 program
   .name('agent-harness')
   .description('Dotfiles-for-AI-agents bootstrapper — configure MCPs, skills, and plugins across Claude Code, Codex, and OpenCode.')
-  .version('0.1.0');
+  .version(pkg.version);
 
 program
   .command('init', { isDefault: true })
