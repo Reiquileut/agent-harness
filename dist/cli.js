@@ -4,6 +4,70 @@
 import { Command } from "commander";
 import process9 from "process";
 
+// package.json
+var package_default = {
+  name: "@r2t/agent-harness",
+  version: "1.0.0",
+  description: "Dotfiles-for-AI-agents bootstrapper: one command to configure MCPs, skills, and plugins across Claude Code, Codex, and OpenCode.",
+  type: "module",
+  bin: {
+    "agent-harness": "dist/cli.js"
+  },
+  files: [
+    "dist",
+    "assets"
+  ],
+  engines: {
+    node: ">=20"
+  },
+  scripts: {
+    build: "tsup",
+    dev: "tsup --watch",
+    typecheck: "tsc",
+    test: "bash scripts/ci-e2e.sh",
+    prepack: "tsup",
+    start: "node dist/cli.js"
+  },
+  keywords: [
+    "ai",
+    "agents",
+    "claude-code",
+    "codex",
+    "opencode",
+    "mcp",
+    "skills",
+    "cli",
+    "bootstrap",
+    "dotfiles"
+  ],
+  author: "reiquileut",
+  license: "MIT",
+  publishConfig: {
+    access: "public"
+  },
+  dependencies: {
+    "@clack/prompts": "^1.6.0",
+    commander: "^15.0.0",
+    execa: "^9.6.1",
+    picocolors: "^1.1.1",
+    "smol-toml": "^1.7.0",
+    zod: "^4.4.3"
+  },
+  devDependencies: {
+    "@types/node": "^26.0.1",
+    tsup: "^8.5.1",
+    typescript: "^6.0.3"
+  },
+  pnpm: {
+    onlyBuiltDependencies: [
+      "esbuild"
+    ],
+    overrides: {
+      esbuild: "^0.28.1"
+    }
+  }
+};
+
 // src/core/fsx.ts
 import { existsSync, promises as fs } from "fs";
 import os from "os";
@@ -1171,7 +1235,7 @@ function collect(value, previous) {
   return previous.concat([value]);
 }
 var program = new Command();
-program.name("agent-harness").description("Dotfiles-for-AI-agents bootstrapper \u2014 configure MCPs, skills, and plugins across Claude Code, Codex, and OpenCode.").version("0.1.0");
+program.name("agent-harness").description("Dotfiles-for-AI-agents bootstrapper \u2014 configure MCPs, skills, and plugins across Claude Code, Codex, and OpenCode.").version(package_default.version);
 program.command("init", { isDefault: true }).description("Configure agents on this machine (user-scope MCPs, skills, plugins), then print the login block.").option("-a, --agent <id>", "target agent (repeatable)", collect, []).option("--mcp <id>", "MCP to install (repeatable)", collect, []).option("--skill <id>", "skill to install (repeatable)", collect, []).option("--plugin <id>", "plugin to install (repeatable)", collect, []).option("--all", "select every catalog item", false).option("-y, --yes", "assume defaults, no prompts (CI)", false).option("--dry-run", "show actions without writing anything", false).option("--force", "overwrite existing entries instead of skipping", false).action(async (opts) => {
   setRunContext({ dryRun: !!opts.dryRun, force: !!opts.force, yes: !!opts.yes });
   await runInitCommand({
