@@ -19,6 +19,7 @@ import {
   type McpEntry,
   type PluginEntry,
   type SkillEntry,
+  type SubagentEntry,
   loadCatalog,
   looksLikePlaceholder,
   mcpAppliesTo,
@@ -36,6 +37,7 @@ import {
   hasLocalSkill,
   isLocalSkill,
 } from '../core/skills';
+import { buildSubagentCopyAction } from '../core/subagents';
 import { type ScaffoldPlan, buildScaffoldActions } from './scaffold';
 import { promptInitSelection } from '../ui/prompts';
 
@@ -44,6 +46,7 @@ export interface InitOptions {
   mcp: string[];
   skill: string[];
   plugin: string[];
+  subagent: string[];
   all: boolean;
   yes: boolean;
 }
@@ -54,6 +57,7 @@ export interface Selection {
   mcps: McpEntry[];
   skills: SkillEntry[];
   plugins: PluginEntry[];
+  subagents: SubagentEntry[];
   /** Optional repo-level setup (interactive unified flow); flags leave it unset. */
   repo?: ScaffoldPlan;
 }
@@ -75,6 +79,7 @@ function selectionFromFlags(catalog: CatalogData, opts: InitOptions): Selection 
     mcps: pick(catalog.mcps, opts.mcp),
     skills: pick(catalog.skills, opts.skill),
     plugins: pick(catalog.plugins, opts.plugin),
+    subagents: pick(catalog.subagents, opts.subagent),
   };
 }
 
@@ -99,7 +104,8 @@ function isInteractive(opts: InitOptions): boolean {
     opts.agent.length > 0 ||
     opts.mcp.length > 0 ||
     opts.skill.length > 0 ||
-    opts.plugin.length > 0;
+    opts.plugin.length > 0 ||
+    opts.subagent.length > 0;
   if (explicit) return false;
   return Boolean(process.stdout.isTTY && process.stdin.isTTY);
 }
@@ -194,6 +200,15 @@ async function configureAgent(agent: AgentInfo, sel: Selection): Promise<void> {
     }
   } else if (sel.plugins.some((p) => p.agent === agent.id)) {
     log.plain(`   ${pc.dim('· skip plugins — unsupported')}`);
+  }
+
+  // Custom subagents (Claude only)
+  if (agent.supports.subagents) {
+    for (const s of sel.subagents) {
+      await runAction(await buildSubagentCopyAction(agent, s, 'user'));
+    }
+  } else if (sel.subagents.length) {
+    log.plain(`   ${pc.dim('· skip agents — unsupported')}`);
   }
 }
 

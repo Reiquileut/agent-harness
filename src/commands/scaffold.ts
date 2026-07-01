@@ -15,6 +15,7 @@ import {
   type CatalogData,
   type McpEntry,
   type SkillEntry,
+  type SubagentEntry,
   loadCatalog,
   mcpAppliesTo,
   skillAppliesTo,
@@ -22,6 +23,7 @@ import {
 import { isDryRun, log } from '../core/fsx';
 import { buildProjectMcpAction } from '../core/mcp';
 import { buildLocalSkillCopyActions, buildSkillAction, isLocalSkill } from '../core/skills';
+import { buildSubagentCopyAction } from '../core/subagents';
 import { buildGitignoreMergeAction, buildTemplateCopyAction } from '../core/templates';
 import { promptScaffoldSelection } from '../ui/prompts';
 
@@ -30,6 +32,7 @@ export const DEFAULT_MEMORY_DEST = '.claude/skills/memory/memory.md';
 export interface ScaffoldOptions {
   mcp: string[];
   skill: string[];
+  subagent: string[];
   withClaudeMd: boolean;
   withAgentsMd: boolean;
   withMemory: boolean;
@@ -48,6 +51,7 @@ export interface ScaffoldPlan {
   withGitignore: boolean;
   mcps: McpEntry[];
   skills: SkillEntry[];
+  subagents: SubagentEntry[];
   memoryDest: string;
 }
 
@@ -62,6 +66,7 @@ function planFromFlags(catalog: CatalogData, opts: ScaffoldOptions): ScaffoldPla
       withGitignore: true,
       mcps: catalog.mcps,
       skills: catalog.skills,
+      subagents: catalog.subagents,
       memoryDest,
     };
   }
@@ -73,6 +78,7 @@ function planFromFlags(catalog: CatalogData, opts: ScaffoldOptions): ScaffoldPla
     withGitignore: opts.gitignore,
     mcps: catalog.mcps.filter((m) => opts.mcp.includes(m.id)),
     skills: catalog.skills.filter((s) => opts.skill.includes(s.id)),
+    subagents: catalog.subagents.filter((s) => opts.subagent.includes(s.id)),
     memoryDest,
   };
 }
@@ -86,7 +92,8 @@ function isInteractive(opts: ScaffoldOptions): boolean {
     opts.withMemory ||
     opts.withOpencode ||
     opts.mcp.length > 0 ||
-    opts.skill.length > 0;
+    opts.skill.length > 0 ||
+    opts.subagent.length > 0;
   if (explicit) return false;
   return Boolean(process.stdout.isTTY && process.stdin.isTTY);
 }
@@ -98,7 +105,8 @@ function isEmptyPlan(p: ScaffoldPlan): boolean {
     !p.withMemory &&
     !p.withGitignore &&
     p.mcps.length === 0 &&
-    p.skills.length === 0
+    p.skills.length === 0 &&
+    p.subagents.length === 0
   );
 }
 
@@ -113,6 +121,18 @@ async function skillActions(skills: SkillEntry[]): Promise<Action[]> {
       } else {
         actions.push(buildSkillAction(agent, skill, 'project'));
       }
+    }
+  }
+  return actions;
+}
+
+/** Project-scoped custom subagent installs, one per (subagent × applicable agent). */
+async function subagentActions(subagents: SubagentEntry[]): Promise<Action[]> {
+  const actions: Action[] = [];
+  for (const entry of subagents) {
+    for (const agent of AGENTS) {
+      if (!agent.supports.subagents) continue;
+      actions.push(await buildSubagentCopyAction(agent, entry, 'project'));
     }
   }
   return actions;
@@ -140,6 +160,9 @@ export async function buildScaffoldActions(
   }
   if (plan.skills.length) {
     actions.push(...(await skillActions(plan.skills)));
+  }
+  if (plan.subagents.length) {
+    actions.push(...(await subagentActions(plan.subagents)));
   }
   if (plan.mcps.length) {
     const claudeMcps = plan.mcps.filter((m) => mcpAppliesTo(m, 'claude-code'));
