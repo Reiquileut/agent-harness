@@ -50,6 +50,13 @@ const SkillSchema = z.object({
   agents: z.array(z.string()).optional(),
 });
 
+const SubagentSchema = z.object({
+  id: z.string().min(1),
+  label: z.string().optional(),
+  /** filename inside assets/agents/ (bundled, verbatim copy). */
+  file: z.string().min(1),
+});
+
 const PluginSchema = z.object({
   id: z.string().min(1),
   label: z.string().optional(),
@@ -76,6 +83,7 @@ const CatalogSchema = z.object({
   agents: z.array(z.string()).default([]),
   mcps: z.array(McpSchema).default([]),
   skills: z.array(SkillSchema).default([]),
+  subagents: z.array(SubagentSchema).default([]),
   plugins: z.array(PluginSchema).default([]),
   templates: TemplatesSchema,
   /** Entries the `scaffold` command merges into the project .gitignore. */
@@ -84,6 +92,7 @@ const CatalogSchema = z.object({
 
 export type McpEntry = z.infer<typeof McpSchema>;
 export type SkillEntry = z.infer<typeof SkillSchema>;
+export type SubagentEntry = z.infer<typeof SubagentSchema>;
 export type PluginEntry = z.infer<typeof PluginSchema>;
 export type CatalogTemplates = z.infer<typeof TemplatesSchema>;
 export type CatalogData = z.infer<typeof CatalogSchema>;

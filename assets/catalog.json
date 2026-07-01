@@ -57,6 +57,18 @@
       "agents": ["claude-code"]
     }
   ],
+  "subagents": [
+    {
+      "id": "documentation-auditor",
+      "label": "Documentation Auditor — audits docs vs codebase (claude only)",
+      "file": "documentation-auditor.md"
+    },
+    {
+      "id": "impeccable-manual-edit-applier",
+      "label": "Impeccable Manual Edit Applier — applies leased Impeccable copy-edit batches (claude only)",
+      "file": "impeccable-manual-edit-applier.md"
+    }
+  ],
   "plugins": [
     {
       "id": "claude-official",
