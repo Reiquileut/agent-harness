@@ -80,10 +80,14 @@ from either:
 │  ◻ Figma        ◻ Chrome DevTools    ◻ Stitch  (claude only)
 │  ◻ Claude official (context7, github, frontend-design, playwright)
 │  ◻ anti-ai-slop · global   ◻ prd · global   ◻ impeccable · global
+│  ◻ Documentation Auditor · global (claude only)
+│  ◻ Impeccable Manual Edit Applier · global (claude only)
 │
 │  Neste repositório (my-project)
 │  ◻ CLAUDE.md    ◻ AGENTS.md    ◻ Skill memory
 │  ◻ anti-ai-slop · repo   ◻ prd · repo   ◻ impeccable · repo
+│  ◻ Documentation Auditor · repo (claude only)
+│  ◻ Impeccable Manual Edit Applier · repo (claude only)
 │  ◻ .mcp.json + opencode.json     ◻ Merge .gitignore
 └
 ```
@@ -91,7 +95,9 @@ from either:
 It applies the machine items **and** sets up the repo in one pass, then prints
 the login block. Skills appear in both groups: **global** (all your projects) or
 **repo** (just this one). So you can run it inside an existing repo and add, say,
-only `CLAUDE.md` + `AGENTS.md` + a couple of skills.
+only `CLAUDE.md` + `AGENTS.md` + a couple of skills. Custom agents follow the same
+global/repo split but only ever apply to **Claude Code** — Codex and OpenCode have
+no equivalent subagent concept.
 
 ---
 
@@ -109,20 +115,22 @@ agent-harness init \
   --mcp figma --mcp chrome-devtools \
   --skill prd \
   --plugin claude-official \
+  --subagent documentation-auditor \
   -y
 
 agent-harness init --all --agent claude-code   # everything in the catalog, one agent
 agent-harness init --dry-run --all             # show every action, write nothing
 ```
 
-Flags: repeatable `--agent/-a`, `--mcp`, `--skill`, `--plugin`; plus `--all`,
-`-y/--yes`, `--dry-run`, `--force`.
+Flags: repeatable `--agent/-a`, `--mcp`, `--skill`, `--plugin`, `--subagent`; plus
+`--all`, `-y/--yes`, `--dry-run`, `--force`.
 
 ### `scaffold` — repo level
 
 Run inside any project (new or existing) to add **just the pieces you pick**:
-`CLAUDE.md`, `AGENTS.md`, a skill memory file, project-scoped skills, a project
-`.mcp.json` (and optionally `opencode.json`), and a `.gitignore` merge.
+`CLAUDE.md`, `AGENTS.md`, a skill memory file, project-scoped skills, project-scoped
+custom agents, a project `.mcp.json` (and optionally `opencode.json`), and a
+`.gitignore` merge.
 
 ```bash
 agent-harness scaffold                          # interactive menu
@@ -134,8 +142,8 @@ agent-harness scaffold --all -y                 # everything in the catalog
 ```
 
 Flags: `--with-claude-md`, `--with-agents-md`, `--with-memory`, `--with-opencode`,
-repeatable `--mcp` and `--skill`, `--memory-dest <path>`, `--no-gitignore`,
-`--all`, `-y`, `--dry-run`, `--force`.
+repeatable `--mcp`, `--skill`, and `--subagent`, `--memory-dest <path>`,
+`--no-gitignore`, `--all`, `-y`, `--dry-run`, `--force`.
 
 Project skills install into each applicable agent's repo dir (`.claude/skills/`,
 `.agents/skills/`, `.opencode/skills/`; agent-scoped skills like `impeccable` go
@@ -152,6 +160,7 @@ only where they apply). Existing files are never clobbered (skipped unless
 | **Project MCP** | `./.mcp.json` (`mcpServers`) | — | `./opencode.json` (`mcp`) |
 | **Skills** | `~/.claude/skills/` | `~/.agents/skills/` | `~/.config/opencode/skills/` |
 | **Plugins** | `claude plugin …` | — | — |
+| **Custom agents** | `~/.claude/agents/` (user) · `.claude/agents/` (project) | — | — |
 | **Instructions** | `CLAUDE.md` | `AGENTS.md` | `AGENTS.md` |
 | **Login** | `claude` (or `/login`) | `codex login` | `opencode auth login` |
 
@@ -159,7 +168,8 @@ Skills are delegated to the [`skills`](https://github.com/vercel-labs/skills) CL
 (`npx skills add`); `"local"` skills are copied straight from `assets/skills/`.
 MCP definitions are stored once in a **neutral** shape and translated to each
 agent's format — Claude `${VAR}`, Codex `env_vars`, OpenCode `{env:VAR}` for the
-secret-free env passthrough.
+secret-free env passthrough. Custom agents have no equivalent installer CLI, so
+they're always copied straight from `assets/agents/<file>` — Claude Code only.
 
 ---
 
@@ -206,6 +216,12 @@ Annotated excerpt:
     { "id": "impeccable",   "source": "local", "skill": "impeccable",
       "agents": ["claude-code"] }                                           // skills take `agents` too
   ],
+  "subagents": [
+    // always Claude Code only — no `agents` allowlist needed, no other agent
+    // in AGENTS declares a `subagents` dir to install into
+    { "id": "documentation-auditor", "label": "Documentation Auditor",
+      "file": "documentation-auditor.md" }                                  // bundled in assets/agents/<file>
+  ],
   "plugins": [
     { "id": "claude-official", "agent": "claude-code",
       "marketplace": "anthropics/claude-plugins-official", "name": "claude-plugins-official",
@@ -227,6 +243,7 @@ Annotated excerpt:
 | MCP `env` | Names of env vars to remind you about; values are never written. |
 | MCP / Skill `agents` | Optional allowlist (e.g. `["claude-code"]`); omit for all agents. |
 | Skill `source` | `owner/repo`, a URL, or `"local"` (bundled under `assets/skills/<id>/`). |
+| Subagent `file` | Filename inside `assets/agents/`, copied verbatim — Claude Code only. |
 | Plugin `name` | Marketplace's declared name, used in `<plugin>@<name>`. |
 | `templates` | Both docs point at one file (DRY); written as separate, independently-editable files. |
 
@@ -239,6 +256,7 @@ reproduces it:
 
 - **MCPs** — `figma`, `chrome-devtools` (cross-agent) · `pencil`, `stitch` (Claude only)
 - **Skills** — `anti-ai-slop`, `prd` (cross-agent) · `impeccable` (Claude only; Apache-2.0; bundled)
+- **Agents** — `documentation-auditor`, `impeccable-manual-edit-applier` (Claude only; bundled)
 - **Plugins** — 6 Claude marketplaces: `claude-plugins-official`, `n8n-skills`, `openai-codex`, `taskmaster`, `obsidian-skills`, `claude-code-warp`
 - **Docs** — `CLAUDE.md` and `AGENTS.md` both write the **Clean Code for Agents** standard
 
@@ -274,7 +292,8 @@ you installed:
    ┌─ Nesta máquina ───────────┐   ┌─ Neste repositório ──────────┐
    │ MCP    → mcp.ts            │   │ CLAUDE.md / AGENTS.md / memory │
    │ skill  → skills.ts         │   │ project skills                 │
-   │ plugin → plugins.ts        │   │ .mcp.json / opencode.json      │  templates.ts
+   │ plugin → plugins.ts        │   │ project custom agents          │
+   │ agent  → subagents.ts      │   │ .mcp.json / opencode.json      │  templates.ts
    └───────────────────────────┘   └────────────────────────────────┘
             │                                   │
             └──── actions.ts: every change is an Action ───┘
@@ -285,9 +304,9 @@ you installed:
 ```
 
 Source layout: `src/cli.ts` routes to `src/commands/{init,scaffold}.ts`; the
-`src/core/*` modules (`catalog`, `agents`, `mcp`, `skills`, `plugins`,
+`src/core/*` modules (`catalog`, `agents`, `mcp`, `skills`, `subagents`, `plugins`,
 `templates`, `actions`, `fsx`) are small and single-purpose. `assets/` holds the
-catalog, bundled skills, and templates.
+catalog, bundled skills, bundled custom agents, and templates.
 
 ---
 

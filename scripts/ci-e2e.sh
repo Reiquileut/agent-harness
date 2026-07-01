@@ -26,10 +26,21 @@ chk "opencode.json has \$schema"         'grep -q "opencode.ai/config.json" "$H/
 chk "anti-ai-slop copied to codex"       '[ -f "$H/.agents/skills/anti-ai-slop/SKILL.md" ]'
 chk "impeccable scoped out of codex"     '[ ! -d "$H/.agents/skills/impeccable" ]'
 chk "pencil scoped out of codex"         '! grep -q "mcp_servers.pencil" "$H/.codex/config.toml"'
+chk "custom agents not installed (no claude-code)" '[ ! -d "$H/.claude/agents" ]'
 
 cp "$H/.codex/config.toml" "$H/before.toml"
 HOME="$H" USERPROFILE="$H" node "$CLI" init -y -a codex -a opencode --all >/dev/null 2>&1
 chk "init idempotent (config unchanged)" 'diff -q "$H/before.toml" "$H/.codex/config.toml" >/dev/null'
+
+# --- init into a temp HOME (claude-code, custom agents) ---
+HC="$(mktemp -d)"
+HOME="$HC" USERPROFILE="$HC" node "$CLI" init -y -a claude-code --subagent documentation-auditor --subagent impeccable-manual-edit-applier >/dev/null 2>&1
+chk "documentation-auditor copied to ~/.claude/agents"      '[ -s "$HC/.claude/agents/documentation-auditor.md" ]'
+chk "impeccable-manual-edit-applier copied to ~/.claude/agents" '[ -s "$HC/.claude/agents/impeccable-manual-edit-applier.md" ]'
+
+cp "$HC/.claude/agents/documentation-auditor.md" "$HC/before-agent.md"
+HOME="$HC" USERPROFILE="$HC" node "$CLI" init -y -a claude-code --subagent documentation-auditor --subagent impeccable-manual-edit-applier >/dev/null 2>&1
+chk "custom agent install idempotent"    'diff -q "$HC/before-agent.md" "$HC/.claude/agents/documentation-auditor.md" >/dev/null'
 
 # --- scaffold into a temp repo ---
 R="$(mktemp -d)"
@@ -40,6 +51,7 @@ chk ".mcp.json has 4 servers"           '[ "$(keys "$R/.mcp.json" mcpServers)" =
 chk "opencode.json has 2 servers"       '[ "$(keys "$R/opencode.json" mcp)" = 2 ]'
 chk "skill installed into repo"         '[ -f "$R/.claude/skills/prd/SKILL.md" ]'
 chk "claude-only skill not in .agents"  '[ ! -d "$R/.agents/skills/impeccable" ]'
+chk "custom agent installed into repo"  '[ -s "$R/.claude/agents/documentation-auditor.md" ]'
 
 echo ""
 if [ "$fail" = 0 ]; then echo "E2E: all checks passed"; else echo "E2E: FAILURES above"; exit 1; fi

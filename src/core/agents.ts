@@ -36,7 +36,7 @@ export interface AgentInfo {
   /** Files whose existence implies the agent is installed. */
   detectFiles: string[];
   /** Capabilities this agent supports. */
-  supports: { mcp: boolean; skills: boolean; plugins: boolean };
+  supports: { mcp: boolean; skills: boolean; plugins: boolean; subagents: boolean };
   /** How user-scope MCP is written. */
   mcpUserMethod: McpUserMethod;
   /** Path of the user-scope MCP config file (for file-merge methods). */
@@ -52,6 +52,11 @@ export interface AgentInfo {
    * the `skills` CLI installs; see plan's drift TODO).
    */
   skills: { userDir: string; projectDir: string };
+  /**
+   * Custom subagent directories this agent reads (Claude Code only, today).
+   * Absent when the agent has no equivalent concept.
+   */
+  subagents?: { userDir: string; projectDir: string };
 }
 
 export const AGENTS: AgentInfo[] = [
@@ -64,11 +69,12 @@ export const AGENTS: AgentInfo[] = [
     bin: 'claude',
     detectDirs: ['~/.claude'],
     detectFiles: ['~/.claude.json'],
-    supports: { mcp: true, skills: true, plugins: true },
+    supports: { mcp: true, skills: true, plugins: true, subagents: true },
     mcpUserMethod: 'claude-cli',
     projectMcpFile: '.mcp.json',
     globalInstructionsFile: '~/.claude/CLAUDE.md',
     skills: { userDir: '~/.claude/skills', projectDir: '.claude/skills' },
+    subagents: { userDir: '~/.claude/agents', projectDir: '.claude/agents' },
   },
   {
     id: 'codex',
@@ -79,7 +85,7 @@ export const AGENTS: AgentInfo[] = [
     bin: 'codex',
     detectDirs: ['~/.codex'],
     detectFiles: ['~/.codex/config.toml'],
-    supports: { mcp: true, skills: true, plugins: false },
+    supports: { mcp: true, skills: true, plugins: false, subagents: false },
     mcpUserMethod: 'codex-toml',
     userMcpFile: '~/.codex/config.toml',
     globalInstructionsFile: '~/.codex/AGENTS.md',
@@ -95,7 +101,7 @@ export const AGENTS: AgentInfo[] = [
     bin: 'opencode',
     detectDirs: ['~/.config/opencode', '~/.opencode'],
     detectFiles: ['~/.config/opencode/opencode.json'],
-    supports: { mcp: true, skills: true, plugins: false },
+    supports: { mcp: true, skills: true, plugins: false, subagents: false },
     mcpUserMethod: 'opencode-json',
     userMcpFile: '~/.config/opencode/opencode.json',
     globalInstructionsFile: '~/.config/opencode/AGENTS.md',

@@ -22,7 +22,7 @@ import pc from 'picocolors';
 import type { Selection } from '../commands/init';
 import { DEFAULT_MEMORY_DEST, type ScaffoldPlan } from '../commands/scaffold';
 import { type AgentInfo, detectInstalledAgentIds, getAgent } from '../core/agents';
-import type { CatalogData, McpEntry, SkillEntry } from '../core/catalog';
+import type { CatalogData, McpEntry, SkillEntry, SubagentEntry } from '../core/catalog';
 
 function toAgents(ids: string[]): AgentInfo[] {
   return ids.map(getAgent).filter((a): a is AgentInfo => Boolean(a));
@@ -38,6 +38,10 @@ function skillHint(s: SkillEntry, scope: string): string {
   return s.agents ? `${s.agents.join('/')} · ${scope}` : scope;
 }
 
+function subagentHint(scope: string): string {
+  return `claude only · ${scope}`;
+}
+
 /** Two-group option set: "Nesta máquina" (global) and "Neste repositório". */
 function buildUnifiedGroups(catalog: CatalogData): Record<string, GroupOption[]> {
   const groups: Record<string, GroupOption[]> = {};
@@ -46,6 +50,7 @@ function buildUnifiedGroups(catalog: CatalogData): Record<string, GroupOption[]>
   for (const m of catalog.mcps) machine.push({ value: `mcp:${m.id}`, label: m.label, hint: mcpHint(m) });
   for (const p of catalog.plugins) machine.push({ value: `plugin:${p.id}`, label: p.label ?? p.id, hint: p.agent });
   for (const s of catalog.skills) machine.push({ value: `mskill:${s.id}`, label: s.label ?? s.skill, hint: skillHint(s, 'global') });
+  for (const a of catalog.subagents) machine.push({ value: `magent:${a.id}`, label: a.label ?? a.id, hint: subagentHint('global') });
   if (machine.length) groups['Nesta máquina (todos os projetos)'] = machine;
 
   const repo: GroupOption[] = [
@@ -54,6 +59,7 @@ function buildUnifiedGroups(catalog: CatalogData): Record<string, GroupOption[]>
     { value: 'doc:memory', label: 'Skill memory', hint: DEFAULT_MEMORY_DEST },
   ];
   for (const s of catalog.skills) repo.push({ value: `pskill:${s.id}`, label: s.label ?? s.skill, hint: skillHint(s, 'repo') });
+  for (const a of catalog.subagents) repo.push({ value: `pagent:${a.id}`, label: a.label ?? a.id, hint: subagentHint('repo') });
   if (catalog.mcps.length) repo.push({ value: 'projmcp', label: '.mcp.json + opencode.json', hint: 'as MCPs marcadas acima' });
   repo.push({ value: 'gitignore', label: 'Merge .gitignore', hint: 'agent caches' });
   groups[`Neste repositório (${path.basename(process.cwd())})`] = repo;
@@ -73,8 +79,14 @@ export function parseUnifiedSelection(
 
   const mcps = catalog.mcps.filter((m) => ids('mcp:').includes(m.id));
   const repoSkillIds = ids('pskill:');
+  const repoSubagentIds = ids('pagent:');
   const wantRepo =
-    has('doc:claude') || has('doc:agents') || has('doc:memory') || repoSkillIds.length > 0 || has('projmcp');
+    has('doc:claude') ||
+    has('doc:agents') ||
+    has('doc:memory') ||
+    repoSkillIds.length > 0 ||
+    repoSubagentIds.length > 0 ||
+    has('projmcp');
 
   const repo: ScaffoldPlan | undefined = wantRepo
     ? {
@@ -85,6 +97,7 @@ export function parseUnifiedSelection(
         withGitignore: has('gitignore'),
         mcps: has('projmcp') ? mcps : [],
         skills: catalog.skills.filter((s) => repoSkillIds.includes(s.id)),
+        subagents: catalog.subagents.filter((a) => repoSubagentIds.includes(a.id)),
         memoryDest: DEFAULT_MEMORY_DEST,
       }
     : undefined;
@@ -94,6 +107,7 @@ export function parseUnifiedSelection(
     mcps,
     skills: catalog.skills.filter((s) => ids('mskill:').includes(s.id)),
     plugins: catalog.plugins.filter((p) => ids('plugin:').includes(p.id)),
+    subagents: catalog.subagents.filter((a) => ids('magent:').includes(a.id)),
     repo,
   };
 }
@@ -102,14 +116,16 @@ function unifiedSummary(sel: Selection): string {
   const names = (arr: Array<{ id: string }>) => (arr.length ? arr.map((x) => x.id).join(', ') : pc.dim('none'));
   const lines = [
     `Agentes:  ${sel.agents.map((a) => a.label).join(', ')}`,
-    `Máquina:  MCPs ${names(sel.mcps)} · skills ${names(sel.skills)} · plugins ${names(sel.plugins)}`,
+    `Máquina:  MCPs ${names(sel.mcps)} · skills ${names(sel.skills)} · plugins ${names(sel.plugins)} · agentes custom ${names(sel.subagents)}`,
   ];
   if (sel.repo) {
     const docs =
       [sel.repo.withClaudeMd && 'CLAUDE.md', sel.repo.withAgentsMd && 'AGENTS.md', sel.repo.withMemory && 'memory']
         .filter(Boolean)
         .join(', ') || pc.dim('none');
-    lines.push(`Repo:     ${docs} · skills ${names(sel.repo.skills)}${sel.repo.mcps.length ? ' · .mcp.json' : ''}`);
+    lines.push(
+      `Repo:     ${docs} · skills ${names(sel.repo.skills)} · agentes custom ${names(sel.repo.subagents)}${sel.repo.mcps.length ? ' · .mcp.json' : ''}`,
+    );
   }
   return lines.join('\n');
 }
@@ -162,6 +178,7 @@ export async function promptScaffoldSelection(catalog: CatalogData): Promise<Sca
       { value: 'agents-md', label: 'AGENTS.md', hint: 'Codex / OpenCode instructions' },
       { value: 'memory', label: 'Skill memory file', hint: DEFAULT_MEMORY_DEST },
       { value: 'skills', label: 'Skills', hint: 'install into the repo (project-scoped)' },
+      { value: 'agents', label: 'Custom agents', hint: 'custom Claude Code subagents (repo-scoped)' },
       { value: 'mcp', label: 'Project .mcp.json', hint: 'Claude project MCPs' },
       { value: 'opencode', label: 'Project opencode.json', hint: 'OpenCode project MCPs' },
       { value: 'gitignore', label: 'Merge .gitignore', hint: 'agent caches' },
@@ -199,6 +216,17 @@ export async function promptScaffoldSelection(catalog: CatalogData): Promise<Sca
     skills = catalog.skills.filter((s) => picked.includes(s.id));
   }
 
+  let subagents: SubagentEntry[] = [];
+  if (want('agents') && catalog.subagents.length) {
+    const picked = await multiselect({
+      message: 'Which custom agents to install into the repo?',
+      options: catalog.subagents.map((a) => ({ value: a.id, label: a.label ?? a.id, hint: 'claude only' })),
+      required: false,
+    });
+    if (isCancel(picked)) return abort();
+    subagents = catalog.subagents.filter((a) => picked.includes(a.id));
+  }
+
   const plan: ScaffoldPlan = {
     withClaudeMd: want('claude-md'),
     withAgentsMd: want('agents-md'),
@@ -207,6 +235,7 @@ export async function promptScaffoldSelection(catalog: CatalogData): Promise<Sca
     withGitignore: want('gitignore'),
     mcps,
     skills,
+    subagents,
     memoryDest: DEFAULT_MEMORY_DEST,
   };
 
@@ -214,6 +243,7 @@ export async function promptScaffoldSelection(catalog: CatalogData): Promise<Sca
     [
       `Docs:     ${[plan.withClaudeMd && 'CLAUDE.md', plan.withAgentsMd && 'AGENTS.md', plan.withMemory && 'memory'].filter(Boolean).join(', ') || pc.dim('none')}`,
       `Skills:   ${skills.length ? skills.map((s) => s.id).join(', ') : pc.dim('none')}`,
+      `Agents:   ${subagents.length ? subagents.map((a) => a.id).join(', ') : pc.dim('none')}`,
       `MCPs:     ${mcps.length ? mcps.map((m) => m.id).join(', ') : pc.dim('none')}${plan.withOpencode ? pc.dim(' (+opencode.json)') : ''}`,
       `gitignore: ${plan.withGitignore ? 'merge' : pc.dim('skip')}`,
     ].join('\n'),

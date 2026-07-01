@@ -24,6 +24,7 @@ program
   .option('--mcp <id>', 'MCP to install (repeatable)', collect, [])
   .option('--skill <id>', 'skill to install (repeatable)', collect, [])
   .option('--plugin <id>', 'plugin to install (repeatable)', collect, [])
+  .option('--subagent <id>', 'custom agent to install (repeatable)', collect, [])
   .option('--all', 'select every catalog item', false)
   .option('-y, --yes', 'assume defaults, no prompts (CI)', false)
   .option('--dry-run', 'show actions without writing anything', false)
@@ -35,6 +36,7 @@ program
       mcp: opts.mcp,
       skill: opts.skill,
       plugin: opts.plugin,
+      subagent: opts.subagent,
       all: !!opts.all,
       yes: !!opts.yes,
     });
@@ -45,6 +47,7 @@ program
   .description('Scaffold the current repo: CLAUDE.md, AGENTS.md, skill memory, project-scoped skills, project .mcp.json, and merge .gitignore.')
   .option('--mcp <id>', 'MCP to include in project config (repeatable)', collect, [])
   .option('--skill <id>', 'skill to install into the repo, project-scoped (repeatable)', collect, [])
+  .option('--subagent <id>', 'custom agent to install into the repo, project-scoped (repeatable)', collect, [])
   .option('--with-claude-md', 'write CLAUDE.md', false)
   .option('--with-agents-md', 'write AGENTS.md', false)
   .option('--with-memory', 'write the skill memory file', false)
@@ -60,6 +63,7 @@ program
     await runScaffoldCommand({
       mcp: opts.mcp,
       skill: opts.skill,
+      subagent: opts.subagent,
       withClaudeMd: !!opts.withClaudeMd,
       withAgentsMd: !!opts.withAgentsMd,
       withMemory: !!opts.withMemory,
