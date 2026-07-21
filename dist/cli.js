@@ -7,7 +7,7 @@ import process9 from "process";
 // package.json
 var package_default = {
   name: "@r2t/agent-harness",
-  version: "1.0.0",
+  version: "1.1.0",
   description: "Dotfiles-for-AI-agents bootstrapper: one command to configure MCPs, skills, and plugins across Claude Code, Codex, and OpenCode.",
   type: "module",
   bin: {
@@ -119,6 +119,22 @@ async function atomicWrite(p, content) {
   await fs.writeFile(tmp, content, "utf8");
   await fs.rename(tmp, target);
 }
+async function readBytes(p) {
+  try {
+    return await fs.readFile(expandHome(p));
+  } catch (err) {
+    if (err?.code === "ENOENT") return null;
+    throw err;
+  }
+}
+async function atomicCopyFile(src, dest) {
+  const target = expandHome(dest);
+  if (ctx.dryRun) return;
+  await fs.mkdir(path.dirname(target), { recursive: true });
+  const tmp = `${target}.${process.pid}.${Date.now()}.tmp`;
+  await fs.copyFile(expandHome(src), tmp);
+  await fs.rename(tmp, target);
+}
 function isRecord(x) {
   return typeof x === "object" && x !== null && !Array.isArray(x);
 }
@@ -189,6 +205,26 @@ async function runAction(action) {
       }
       await atomicWrite(action.path, action.after);
       log.success(`${INDENT}${verb === "create" ? "created" : "updated"} ${tildify(action.path)} ${pc2.dim(`\u2014 ${action.label}`)}`);
+      return { status: "written", label: action.label };
+    }
+    case "copy": {
+      const srcBytes = await readBytes(action.src);
+      if (srcBytes == null) {
+        log.error(`${action.label} failed: source missing (${tildify(action.src)})`);
+        return { status: "failed", label: action.label, detail: `missing ${action.src}` };
+      }
+      const destBytes = await readBytes(action.dest);
+      if (destBytes != null && srcBytes.equals(destBytes)) {
+        log.plain(`${INDENT}${pc2.dim("\xB7 already set")} ${action.label} ${pc2.dim(`(${tildify(action.dest)})`)}`);
+        return { status: "noop", label: action.label };
+      }
+      const verb = destBytes == null ? "create" : "update";
+      if (isDryRun()) {
+        log.plain(`${INDENT}${dryTag()}${verb} ${tildify(action.dest)} ${pc2.dim(`\u2014 ${action.label}`)}`);
+        return { status: "written", label: action.label, detail: `${verb} ${action.dest}` };
+      }
+      await atomicCopyFile(action.src, action.dest);
+      log.success(`${INDENT}${verb === "create" ? "created" : "updated"} ${tildify(action.dest)} ${pc2.dim(`\u2014 ${action.label}`)}`);
       return { status: "written", label: action.label };
     }
     case "exec": {
@@ -747,6 +783,31 @@ async function listFilesRecursive(dir) {
   }
   return out;
 }
+var BINARY_EXTENSIONS = /* @__PURE__ */ new Set([
+  ".png",
+  ".jpg",
+  ".jpeg",
+  ".gif",
+  ".webp",
+  ".ico",
+  ".avif",
+  ".pdf",
+  ".zip",
+  ".gz",
+  ".tar",
+  ".woff",
+  ".woff2",
+  ".ttf",
+  ".otf",
+  ".eot",
+  ".mp3",
+  ".mp4",
+  ".webm",
+  ".wasm"
+]);
+function isBinaryFile(file) {
+  return BINARY_EXTENSIONS.has(path5.extname(file).toLowerCase());
+}
 async function buildLocalSkillCopyActions(agent, skill, scope) {
   const label = `Skill ${skill.skill} \u2192 ${agent.label} (local copy)`;
   const srcDir = localSkillDir(skill);
@@ -767,6 +828,10 @@ async function buildLocalSkillCopyActions(agent, skill, scope) {
   for (const file of files) {
     const rel = path5.relative(srcDir, file);
     const dest = path5.join(destDir, rel);
+    if (isBinaryFile(file)) {
+      actions.push({ kind: "copy", label: `copy ${rel} \u2192 ${agent.label}`, src: file, dest });
+      continue;
+    }
     const after = await fs2.readFile(file, "utf8");
     actions.push({
       kind: "file",

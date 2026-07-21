@@ -110,6 +110,26 @@ export async function copyFile(src: string, dest: string): Promise<void> {
   await atomicWrite(dest, content);
 }
 
+/** Read a file as raw bytes, returning null when it does not exist. */
+export async function readBytes(p: string): Promise<Buffer | null> {
+  try {
+    return await fs.readFile(expandHome(p));
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException)?.code === 'ENOENT') return null;
+    throw err;
+  }
+}
+
+/** Byte-for-byte atomic copy (temp + rename); creates parent dirs. No-op under --dry-run. */
+export async function atomicCopyFile(src: string, dest: string): Promise<void> {
+  const target = expandHome(dest);
+  if (ctx.dryRun) return;
+  await fs.mkdir(path.dirname(target), { recursive: true });
+  const tmp = `${target}.${process.pid}.${Date.now()}.tmp`;
+  await fs.copyFile(expandHome(src), tmp);
+  await fs.rename(tmp, target);
+}
+
 // ---------------------------------------------------------------------------
 // JSON read-modify-write
 // ---------------------------------------------------------------------------

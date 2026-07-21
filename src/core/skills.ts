@@ -61,6 +61,22 @@ async function listFilesRecursive(dir: string): Promise<string[]> {
 }
 
 /**
+ * Extensions that must be copied byte-for-byte. Reading these as utf8 (the
+ * text FileAction path) silently corrupts them — e.g. the PNGs bundled with
+ * the shadcn skill.
+ */
+const BINARY_EXTENSIONS = new Set([
+  '.png', '.jpg', '.jpeg', '.gif', '.webp', '.ico', '.avif',
+  '.pdf', '.zip', '.gz', '.tar',
+  '.woff', '.woff2', '.ttf', '.otf', '.eot',
+  '.mp3', '.mp4', '.webm', '.wasm',
+]);
+
+function isBinaryFile(file: string): boolean {
+  return BINARY_EXTENSIONS.has(path.extname(file).toLowerCase());
+}
+
+/**
  * Copy a locally-bundled skill (assets/skills/<id>/) directly into the agent's
  * documented skills directory. Used both as the primary path for source:"local"
  * skills and as the fallback when `npx skills` fails. Returns one file action
@@ -90,6 +106,10 @@ export async function buildLocalSkillCopyActions(
   for (const file of files) {
     const rel = path.relative(srcDir, file);
     const dest = path.join(destDir, rel);
+    if (isBinaryFile(file)) {
+      actions.push({ kind: 'copy', label: `copy ${rel} → ${agent.label}`, src: file, dest });
+      continue;
+    }
     const after = await fs.readFile(file, 'utf8');
     actions.push({
       kind: 'file',

@@ -77,15 +77,16 @@ from either:
 ◆  Marque o que instalar (espaço alterna, enter confirma):
 │
 │  Nesta máquina (todos os projetos)
-│  ◻ Figma        ◻ Chrome DevTools    ◻ Stitch  (claude only)
+│  ◻ Figma        ◻ Chrome DevTools    ◻ n8n-mcp    ◻ Stitch  (claude only)
 │  ◻ Claude official (context7, github, frontend-design, playwright)
 │  ◻ anti-ai-slop · global   ◻ prd · global   ◻ impeccable · global
+│  ◻ find-skills · global    ◻ shadcn · global   ◻ grill-me · global   …
 │  ◻ Documentation Auditor · global (claude only)
 │  ◻ Impeccable Manual Edit Applier · global (claude only)
 │
 │  Neste repositório (my-project)
 │  ◻ CLAUDE.md    ◻ AGENTS.md    ◻ Skill memory
-│  ◻ anti-ai-slop · repo   ◻ prd · repo   ◻ impeccable · repo
+│  ◻ anti-ai-slop · repo   ◻ prd · repo   ◻ impeccable · repo   …
 │  ◻ Documentation Auditor · repo (claude only)
 │  ◻ Impeccable Manual Edit Applier · repo (claude only)
 │  ◻ .mcp.json + opencode.json     ◻ Merge .gitignore
@@ -149,6 +150,8 @@ Project skills install into each applicable agent's repo dir (`.claude/skills/`,
 `.agents/skills/`, `.opencode/skills/`; agent-scoped skills like `impeccable` go
 only where they apply). Existing files are never clobbered (skipped unless
 `--force`); `.gitignore` entries merge under a managed block without duplicating.
+Bundled skill assets that are binary (images, fonts, archives) are copied
+byte-for-byte, never re-encoded.
 
 ---
 
@@ -254,8 +257,10 @@ still looks like a `<placeholder>`.
 **The shipped catalog** mirrors a real Claude Code setup, so a fresh machine
 reproduces it:
 
-- **MCPs** — `figma`, `chrome-devtools` (cross-agent) · `pencil`, `stitch` (Claude only)
-- **Skills** — `anti-ai-slop`, `prd` (cross-agent) · `impeccable` (Claude only; Apache-2.0; bundled)
+- **MCPs** — `figma`, `chrome-devtools`, `n8n-mcp` (cross-agent) · `pencil`, `stitch` (Claude only)
+- **Skills** — `anti-ai-slop`, `prd`, `find-skills`, `shadcn`, `grill-me`,
+  `grill-with-docs`, `paperclip-create-agent`, `gestao-crise-atalaia`
+  (cross-agent) · `impeccable` (Claude only; Apache-2.0; bundled)
 - **Agents** — `documentation-auditor`, `impeccable-manual-edit-applier` (Claude only; bundled)
 - **Plugins** — 6 Claude marketplaces: `claude-plugins-official`, `n8n-skills`, `openai-codex`, `taskmaster`, `obsidian-skills`, `claude-code-warp`
 - **Docs** — `CLAUDE.md` and `AGENTS.md` both write the **Clean Code for Agents** standard
@@ -274,7 +279,7 @@ you installed:
   OpenCode     →  opencode auth login
 
   MCPs with OAuth (Notion, Google…) authenticate on first tool use.
-  MCPs needing API keys — export in your shell/.env: STITCH_API_KEY
+  MCPs needing API keys — export in your shell/.env: STITCH_API_KEY N8N_API_URL N8N_API_KEY
 ```
 
 ---
