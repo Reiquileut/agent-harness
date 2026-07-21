@@ -34,6 +34,14 @@
       "headers": { "X-Goog-Api-Key": "${STITCH_API_KEY}" },
       "env": ["STITCH_API_KEY"],
       "agents": ["claude-code"]
+    },
+    {
+      "id": "n8n-mcp",
+      "label": "n8n-mcp — build, validate & manage n8n workflows",
+      "transport": "stdio",
+      "command": "npx",
+      "args": ["-y", "n8n-mcp@latest"],
+      "env": ["N8N_API_URL", "N8N_API_KEY"]
     }
   ],
   "skills": [
@@ -55,6 +63,42 @@
       "source": "local",
       "skill": "impeccable",
       "agents": ["claude-code"]
+    },
+    {
+      "id": "find-skills",
+      "label": "Find Skills — discover/install skills from the open ecosystem",
+      "source": "local",
+      "skill": "find-skills"
+    },
+    {
+      "id": "shadcn",
+      "label": "shadcn — manage shadcn/ui components, registries & presets",
+      "source": "local",
+      "skill": "shadcn"
+    },
+    {
+      "id": "grill-me",
+      "label": "Grill Me — relentless plan/design interview until shared understanding",
+      "source": "local",
+      "skill": "grill-me"
+    },
+    {
+      "id": "grill-with-docs",
+      "label": "Grill With Docs — plan grilling that updates CONTEXT.md/ADRs inline",
+      "source": "local",
+      "skill": "grill-with-docs"
+    },
+    {
+      "id": "paperclip-create-agent",
+      "label": "Paperclip Create Agent — governance-aware agent hiring",
+      "source": "local",
+      "skill": "paperclip-create-agent"
+    },
+    {
+      "id": "gestao-crise-atalaia",
+      "label": "Gestão de Crise Atalaia — social listening & panorama de dano (PT)",
+      "source": "local",
+      "skill": "gestao-crise-atalaia"
     }
   ],
   "subagents": [

@@ -8,7 +8,7 @@
  */
 import { execa } from 'execa';
 import pc from 'picocolors';
-import { atomicWrite, dryTag, isDryRun, log, tildify } from './fsx';
+import { atomicCopyFile, atomicWrite, dryTag, isDryRun, log, readBytes, tildify } from './fsx';
 
 /** Write `after` to `path` (atomic). `before` is current content (null if new). */
 export interface FileAction {
@@ -17,6 +17,14 @@ export interface FileAction {
   path: string;
   before: string | null;
   after: string;
+}
+
+/** Byte-for-byte copy of `src` to `dest` (binary-safe: images, fonts, archives). */
+export interface CopyAction {
+  kind: 'copy';
+  label: string;
+  src: string;
+  dest: string;
 }
 
 /** Run an external command. */
@@ -47,7 +55,7 @@ export interface NoteAction {
   level?: 'info' | 'warn';
 }
 
-export type Action = FileAction | ExecAction | SkipAction | NoteAction;
+export type Action = FileAction | CopyAction | ExecAction | SkipAction | NoteAction;
 
 export type ApplyStatus = 'written' | 'noop' | 'ran' | 'skipped' | 'failed';
 export interface ApplyResult {
@@ -81,6 +89,27 @@ export async function runAction(action: Action): Promise<ApplyResult> {
       }
       await atomicWrite(action.path, action.after);
       log.success(`${INDENT}${verb === 'create' ? 'created' : 'updated'} ${tildify(action.path)} ${pc.dim(`— ${action.label}`)}`);
+      return { status: 'written', label: action.label };
+    }
+
+    case 'copy': {
+      const srcBytes = await readBytes(action.src);
+      if (srcBytes == null) {
+        log.error(`${action.label} failed: source missing (${tildify(action.src)})`);
+        return { status: 'failed', label: action.label, detail: `missing ${action.src}` };
+      }
+      const destBytes = await readBytes(action.dest);
+      if (destBytes != null && srcBytes.equals(destBytes)) {
+        log.plain(`${INDENT}${pc.dim('· already set')} ${action.label} ${pc.dim(`(${tildify(action.dest)})`)}`);
+        return { status: 'noop', label: action.label };
+      }
+      const verb = destBytes == null ? 'create' : 'update';
+      if (isDryRun()) {
+        log.plain(`${INDENT}${dryTag()}${verb} ${tildify(action.dest)} ${pc.dim(`— ${action.label}`)}`);
+        return { status: 'written', label: action.label, detail: `${verb} ${action.dest}` };
+      }
+      await atomicCopyFile(action.src, action.dest);
+      log.success(`${INDENT}${verb === 'create' ? 'created' : 'updated'} ${tildify(action.dest)} ${pc.dim(`— ${action.label}`)}`);
       return { status: 'written', label: action.label };
     }
 

@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>ATALAIA — [TÍTULO] [DATA]</title>
+<!-- Template ATALAIA: usado pelo Panorama de Crise e pelo Anexo de Evidências.
+     Regras: sem emojis; sem citar ferramentas de coleta; A4; renderizar via Chrome headless. -->
+<style>
+  @page { size: A4; margin: 14mm 12mm 16mm 12mm; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: "Segoe UI", Arial, sans-serif; font-size: 9.5pt; color: #1a1d26; line-height: 1.45; }
+  .cover { background: #101725; color: #fff; padding: 26px 30px; border-radius: 8px; margin-bottom: 18px; }
+  .cover .brand { font-size: 8pt; letter-spacing: 3px; color: #7ea6ff; font-weight: 600; }
+  .cover h1 { font-size: 19pt; margin: 6px 0 4px; font-weight: 700; }
+  .cover .sub { font-size: 10pt; color: #c6cede; }
+  .cover .meta { margin-top: 12px; font-size: 8.5pt; color: #9aa5bb; display: flex; gap: 22px; flex-wrap: wrap; }
+  /* Badge de alerta: amarelo #f5b100 (AMARELO), verde #1d8a4e (VERDE), vermelho #c8342a (VERMELHO) */
+  .badge { display: inline-block; background: #f5b100; color: #101725; font-weight: 700; padding: 3px 12px; border-radius: 20px; font-size: 9pt; margin-top: 10px; }
+  h2 { font-size: 12.5pt; color: #101725; border-left: 5px solid #2458d6; padding-left: 9px; margin: 20px 0 8px; page-break-after: avoid; }
+  h3 { font-size: 10.5pt; color: #2458d6; margin: 12px 0 5px; page-break-after: avoid; }
+  p { margin: 5px 0; }
+  ul, ol { margin: 5px 0 5px 18px; }
+  li { margin: 3px 0; }
+  table { width: 100%; border-collapse: collapse; margin: 7px 0 10px; font-size: 8.7pt; page-break-inside: avoid; }
+  th { background: #101725; color: #fff; text-align: left; padding: 5px 7px; font-weight: 600; }
+  td { border: 1px solid #d5dae4; padding: 4.5px 7px; vertical-align: top; }
+  tr:nth-child(even) td { background: #f4f6fa; }
+  a { color: #2458d6; text-decoration: none; word-break: break-all; }
+  /* KPIs do sumário executivo: .kpi normal (azul), .kpi.warn (vermelho), .kpi.ok (verde) */
+  .kpi-row { display: flex; gap: 10px; margin: 10px 0; }
+  .kpi { flex: 1; border: 1.5px solid #d5dae4; border-radius: 7px; padding: 9px 11px; text-align: center; }
+  .kpi .num { font-size: 15pt; font-weight: 700; color: #2458d6; }
+  .kpi .lbl { font-size: 7.6pt; color: #5a6375; text-transform: uppercase; letter-spacing: .5px; margin-top: 2px; }
+  .kpi.warn .num { color: #c8342a; }
+  .kpi.ok .num { color: #1d8a4e; }
+  /* Caixas: .alert (amarela, indícios/atenção), .good (verde, fact-sheet), .info (azul, correções), .danger (vermelha) */
+  .box { border-radius: 7px; padding: 10px 13px; margin: 9px 0; page-break-inside: avoid; }
+  .box.alert { background: #fdf3e3; border: 1.5px solid #f5b100; }
+  .box.good { background: #e9f6ee; border: 1.5px solid #1d8a4e; }
+  .box.info { background: #ecf1fd; border: 1.5px solid #2458d6; }
+  .box.danger { background: #fdecea; border: 1.5px solid #c8342a; }
+  .box b.t { display: block; margin-bottom: 4px; font-size: 9.8pt; }
+  .small { font-size: 8pt; color: #5a6375; }
+  .footer { margin-top: 20px; padding-top: 8px; border-top: 1px solid #d5dae4; font-size: 7.6pt; color: #7a8296; }
+  /* Tags inline: .tag azul (neutro/status), .tag.red (VETOR/iminente), .tag.green (ok/não ocorreu) */
+  .tag { display: inline-block; background: #ecf1fd; color: #2458d6; border-radius: 4px; padding: 1px 7px; font-size: 7.8pt; font-weight: 600; margin-right: 4px; }
+  .tag.red { background: #fdecea; color: #c8342a; }
+  .tag.green { background: #e9f6ee; color: #1d8a4e; }
+  .pagebreak { page-break-before: always; }
+</style>
+</head>
+<body>
+
+<div class="cover">
+  <div class="brand">[CODINOME DA OPERAÇÃO — default: ATALAIA] · MONITORAMENTO ESTRATÉGICO · CONFIDENCIAL</div>
+  <h1>[Panorama de Crise — TEMA | Anexo de Evidências e Fontes]</h1>
+  <div class="sub">Monitorado principal: <b>[NOME (PARTIDO)]</b> — [cargo/condição]</div>
+  <div class="meta">
+    <span>Corte: [DATA · HORA local]</span>
+    <span>[Data crítica seguinte: evento (D-x)]</span>
+  </div>
+  <span class="badge">NÍVEL DE ALERTA: [VERDE/AMARELO/VERMELHO] — [resumo de uma linha]</span>
+</div>
+
+<!-- PANORAMA: seções 1-8 conforme SKILL.md (Sumário c/ kpi-row, Linha do tempo,
+     Alcance por plataforma, Mapa de vetores, Sentimento, Fatos de blindagem em box.good,
+     Riscos & gatilhos, Recomendações).
+     ANEXO: blocos E1-E7 com tabelas de links (coluna Veículo/Ator + coluna Link com <a href>).
+     Cada bloco do Anexo referencia a seção do Panorama que sustenta via <span class="small">. -->
+
+<div class="footer">[CODINOME] — [Relatório de social listening e gestão de crise | Anexo de Evidências e Fontes] · [DATA] · Documento interno e confidencial · Evidências brutas arquivadas com timestamps, disponíveis para uso jurídico.</div>
+
+</body>
+</html>
