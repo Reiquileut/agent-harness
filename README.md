@@ -259,8 +259,8 @@ reproduces it:
 
 - **MCPs** — `figma`, `chrome-devtools`, `n8n-mcp` (cross-agent) · `pencil`, `stitch` (Claude only)
 - **Skills** — `anti-ai-slop`, `prd`, `find-skills`, `shadcn`, `grill-me`,
-  `grill-with-docs`, `paperclip-create-agent`, `gestao-crise-atalaia`
-  (cross-agent) · `impeccable` (Claude only; Apache-2.0; bundled)
+  `grill-with-docs`, `paperclip-create-agent`, `gestao-crise-atalaia`,
+  `paper-diario-atalaia` (cross-agent) · `impeccable` (Claude only; Apache-2.0; bundled)
 - **Agents** — `documentation-auditor`, `impeccable-manual-edit-applier` (Claude only; bundled)
 - **Plugins** — 6 Claude marketplaces: `claude-plugins-official`, `n8n-skills`, `openai-codex`, `taskmaster`, `obsidian-skills`, `claude-code-warp`
 - **Docs** — `CLAUDE.md` and `AGENTS.md` both write the **Clean Code for Agents** standard

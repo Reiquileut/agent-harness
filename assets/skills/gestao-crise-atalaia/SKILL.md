@@ -64,6 +64,13 @@ Padrão Apify: disparar runs **assíncronas em paralelo** (POST `/v2/acts/{actor
 
 **Duas medições** dos posts-chave (~25-30 min de intervalo) para velocidade — a varredura de contas geralmente re-captura os posts de ataque; aproveitar.
 
+**Disciplina de custo (a cobrança só acontece quando um actor raspa itens — nunca ao reler dados):**
+- Antes de qualquer run: consultar o que já existe — banco do cliente (Dagster/SQL, se houver) e datasets de runs antigas da Apify (`GET /v2/acts/{actor}/runs` → `GET /v2/datasets/{id}/items`, releitura é grátis dentro da retenção do plano).
+- **O filtro anti-redundância vai no INPUT do actor, nunca só na pós-filtragem**: `onlyPostsNewerThan=<watermark>` (IG), `resultsLimit = total_atual − já_armazenado` (comentários), operador `since:` na query (Twitter). Filtrar depois do download limpa o banco mas NÃO evita a cobrança.
+- Teto duro por run: `maxItems` e `maxTotalChargeUsd` nas opções da run.
+- Persistir datasets no armazenamento durável do cliente antes da retenção da Apify expirar (7-31 dias conforme plano); manter watermark e IDs únicos por fonte para dedup.
+- Remedição de métricas dos mesmos posts NÃO é redundância — é observação nova (série temporal para velocidade), custo ~US$ 0,002/item.
+
 ## FASE 3 — Verificação de imprensa (paralela à coleta)
 
 1. **Linha do tempo verificada** do fato-base (decisões judiciais com processo/juiz/tribunal; números oficiais com fonte).
