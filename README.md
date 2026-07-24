@@ -245,7 +245,8 @@ Annotated excerpt:
 |---|---|
 | MCP `env` | Names of env vars to remind you about; values are never written. |
 | MCP / Skill `agents` | Optional allowlist (e.g. `["claude-code"]`); omit for all agents. |
-| Skill `source` | `owner/repo`, a URL, or `"local"` (bundled under `assets/skills/<id>/`). |
+| Skill `source` | `owner/repo`, a URL, or `"local"` (bundled under `assets/skills/<id>/`). A remote source falls back to the bundled copy when the fetch fails. |
+| Skill `requires` | Prerequisites the installer can't provide (a binary, a runtime); listed in the post-install manifest. |
 | Subagent `file` | Filename inside `assets/agents/`, copied verbatim — Claude Code only. |
 | Plugin `name` | Marketplace's declared name, used in `<plugin>@<name>`. |
 | `templates` | Both docs point at one file (DRY); written as separate, independently-editable files. |
@@ -260,10 +261,16 @@ reproduces it:
 - **MCPs** — `figma`, `chrome-devtools`, `n8n-mcp` (cross-agent) · `pencil`, `stitch` (Claude only)
 - **Skills** — `anti-ai-slop`, `prd`, `find-skills`, `shadcn`, `grill-me`,
   `grill-with-docs`, `paperclip-create-agent`, `gestao-crise-atalaia`,
-  `paper-diario-atalaia` (cross-agent) · `impeccable` (Claude only; Apache-2.0; bundled)
+  `paper-diario-atalaia`, `archify`, `computer-use`, `orca-cli`, `orchestration`
+  (cross-agent) · `impeccable` (Claude only; Apache-2.0; bundled)
 - **Agents** — `documentation-auditor`, `impeccable-manual-edit-applier` (Claude only; bundled)
 - **Plugins** — 6 Claude marketplaces: `claude-plugins-official`, `n8n-skills`, `openai-codex`, `taskmaster`, `obsidian-skills`, `claude-code-warp`
 - **Docs** — `CLAUDE.md` and `AGENTS.md` both write the **Clean Code for Agents** standard
+
+`archify` is the one skill fetched from its upstream (`tt-a1i/archify`) rather than
+bundled-only; the bundled copy is its offline fallback. `computer-use`, `orca-cli`, and
+`orchestration` need the Orca desktop app on PATH — `requires` surfaces that in the
+manifest (below) instead of letting the agent discover it by failing.
 
 ---
 
@@ -281,6 +288,38 @@ you installed:
   MCPs with OAuth (Notion, Google…) authenticate on first tool use.
   MCPs needing API keys — export in your shell/.env: STITCH_API_KEY N8N_API_URL N8N_API_KEY
 ```
+
+---
+
+## Post-install manifest
+
+That block scrolls away, so `init` also writes a durable copy into each agent's
+**global instructions file** — `~/.claude/CLAUDE.md`, `~/.codex/AGENTS.md`,
+`~/.config/opencode/AGENTS.md`. Skills are auto-discovered from their frontmatter,
+but nothing otherwise tells the agent which MCPs and plugins exist, or that a skill
+needs a binary the installer never installed:
+
+```markdown
+<!-- BEGIN agent-harness -->
+## Provisioned by agent-harness v1.3.0
+
+This environment was set up by `agent-harness init`. Available to Claude Code:
+
+**Skills** (`~/.claude/skills`) — anti-ai-slop, archify, computer-use, …
+**MCPs** — chrome-devtools, figma, n8n-mcp, pencil, stitch
+**Subagents** (`~/.claude/agents`) — documentation-auditor, …
+**Plugins** — claude-official, n8n-mcp-skills, openai-codex, …
+
+**Prerequisites the installer doesn't provide:**
+- Node >= 18 — archify
+- Orca desktop app (`orca` on PATH) — computer-use, orca-cli, orchestration
+- Env vars — N8N_API_URL, N8N_API_KEY, STITCH_API_KEY
+<!-- END agent-harness -->
+```
+
+Only the marked block is owned by the tool — anything you write around it survives,
+and re-running `init` replaces the block in place rather than appending a second one.
+Opt out with `--no-manifest`.
 
 ---
 

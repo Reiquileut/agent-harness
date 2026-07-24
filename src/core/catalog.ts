@@ -48,6 +48,8 @@ const SkillSchema = z.object({
   skill: z.string().min(1),
   /** Restrict this skill to specific agents (omit = all agents). */
   agents: z.array(z.string()).optional(),
+  /** External prerequisites the installer can't provide (listed in the manifest). */
+  requires: z.array(z.string()).optional(),
 });
 
 const SubagentSchema = z.object({

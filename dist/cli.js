@@ -7,7 +7,7 @@ import process9 from "process";
 // package.json
 var package_default = {
   name: "@r2t/agent-harness",
-  version: "1.1.0",
+  version: "1.3.0",
   description: "Dotfiles-for-AI-agents bootstrapper: one command to configure MCPs, skills, and plugins across Claude Code, Codex, and OpenCode.",
   type: "module",
   bin: {
@@ -174,6 +174,26 @@ ${GITIGNORE_END}
     content = `${prefix}${prefix.length && !prefix.endsWith("\n\n") ? "\n" : ""}${block}`;
   }
   return { content, added: toAdd };
+}
+var MANIFEST_BEGIN = "<!-- BEGIN agent-harness -->";
+var MANIFEST_END = "<!-- END agent-harness -->";
+function mergeManagedBlock(existing, body, begin, end) {
+  const base = existing ?? "";
+  const block = `${begin}
+${body.trim()}
+${end}
+`;
+  const start = base.indexOf(begin);
+  const stop = start === -1 ? -1 : base.indexOf(end, start + begin.length);
+  if (start !== -1 && stop !== -1) {
+    const before = base.slice(0, start);
+    const after = base.slice(stop + end.length).replace(/^\r?\n/, "");
+    return `${before}${block}${after}`;
+  }
+  const prefix = base.length === 0 || base.endsWith("\n") ? base : `${base}
+`;
+  const gap = prefix.length && !prefix.endsWith("\n\n") ? "\n" : "";
+  return `${prefix}${gap}${block}`;
 }
 
 // src/commands/init.ts
@@ -379,7 +399,9 @@ var SkillSchema = z.object({
   /** the specific skill name inside that source. */
   skill: z.string().min(1),
   /** Restrict this skill to specific agents (omit = all agents). */
-  agents: z.array(z.string()).optional()
+  agents: z.array(z.string()).optional(),
+  /** External prerequisites the installer can't provide (listed in the manifest). */
+  requires: z.array(z.string()).optional()
 });
 var SubagentSchema = z.object({
   id: z.string().min(1),
@@ -844,6 +866,69 @@ async function buildLocalSkillCopyActions(agent, skill, scope) {
   return actions;
 }
 
+// src/core/manifest.ts
+var list = (names) => [...names].sort().join(", ");
+function prerequisiteLines(skills) {
+  const byRequirement = /* @__PURE__ */ new Map();
+  for (const s of skills) {
+    for (const req of s.requires ?? []) {
+      const users = byRequirement.get(req) ?? [];
+      users.push(s.id);
+      byRequirement.set(req, users);
+    }
+  }
+  return [...byRequirement.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([req, users]) => `- ${req} \u2014 ${list(users)}`);
+}
+function renderManifest(agent, sel, version) {
+  const skills = agent.supports.skills ? sel.skills.filter((s) => skillAppliesTo(s, agent.id)) : [];
+  const mcps = agent.supports.mcp ? sel.mcps.filter((m) => mcpAppliesTo(m, agent.id)) : [];
+  const plugins = agent.supports.plugins ? sel.plugins.filter((p) => p.agent === agent.id) : [];
+  const subagents = agent.supports.subagents ? sel.subagents : [];
+  const lines = [
+    `## Provisioned by agent-harness v${version}`,
+    "",
+    `This environment was set up by \`agent-harness init\`. Available to ${agent.label}:`,
+    ""
+  ];
+  if (skills.length) {
+    lines.push(`**Skills** (\`${agent.skills.userDir}\`) \u2014 ${list(skills.map((s) => s.skill))}`);
+  }
+  if (mcps.length) lines.push(`**MCPs** \u2014 ${list(mcps.map((m) => m.id))}`);
+  if (subagents.length) {
+    lines.push(
+      `**Subagents** (\`${agent.subagents?.userDir}\`) \u2014 ${list(subagents.map((s) => s.id))}`
+    );
+  }
+  if (plugins.length) lines.push(`**Plugins** \u2014 ${list(plugins.map((p) => p.id))}`);
+  const prereqs = prerequisiteLines(skills);
+  const envs = requiredEnvVars(mcps);
+  if (prereqs.length || envs.length) {
+    lines.push("", "**Prerequisites the installer doesn't provide:**", ...prereqs);
+    if (envs.length) lines.push(`- Env vars \u2014 ${envs.join(", ")}`);
+  }
+  lines.push(
+    "",
+    "MCPs and plugins only take effect after restarting the agent. This block is",
+    "generated \u2014 re-run the installer to refresh it, don't hand-edit."
+  );
+  return lines.join("\n");
+}
+async function buildManifestAction(agent, sel, version) {
+  const file = agent.globalInstructionsFile;
+  const label = `${agent.instructionsFile} (agent-harness block)`;
+  if (!file) {
+    return { kind: "skip", label, reason: `no global instructions file for ${agent.id}` };
+  }
+  const before = await readText(file);
+  const after = mergeManagedBlock(
+    before,
+    renderManifest(agent, sel, version),
+    MANIFEST_BEGIN,
+    MANIFEST_END
+  );
+  return { kind: "file", label: `${tildify(file)} (agent-harness block)`, path: file, before, after };
+}
+
 // src/core/subagents.ts
 import { promises as fs3 } from "fs";
 import path6 from "path";
@@ -894,10 +979,10 @@ async function buildTemplateCopyAction(assetRel, destRel, label, cwd) {
   return { kind: "file", label, path: dest, before, after };
 }
 async function buildGitignoreMergeAction(entries, cwd) {
-  const list = entries.length ? entries : DEFAULT_GITIGNORE_ENTRIES;
+  const list2 = entries.length ? entries : DEFAULT_GITIGNORE_ENTRIES;
   const file = resolveInCwd(".gitignore", cwd);
   const before = await readText(file);
-  const { content, added } = mergeGitignore(before, list);
+  const { content, added } = mergeGitignore(before, list2);
   if (added.length === 0) {
     return { kind: "skip", label: ".gitignore", reason: "all entries already present" };
   }
@@ -1278,7 +1363,7 @@ async function runInitCommand(opts) {
   for (const agent of selection.agents) {
     log.plain("");
     log.step(pc5.bold(agent.label));
-    await configureAgent(agent, selection);
+    await configureAgent(agent, selection, opts);
   }
   if (selection.repo) {
     const repoActions = await buildScaffoldActions(catalog, selection.repo);
@@ -1290,7 +1375,7 @@ async function runInitCommand(opts) {
   }
   printAuthBlock(selection);
 }
-async function configureAgent(agent, sel) {
+async function configureAgent(agent, sel, opts) {
   if (agent.supports.mcp) {
     const applicable = sel.mcps.filter((m) => mcpAppliesTo(m, agent.id));
     for (const m of applicable) {
@@ -1338,6 +1423,9 @@ async function configureAgent(agent, sel) {
   } else if (sel.subagents.length) {
     log.plain(`   ${pc5.dim("\xB7 skip agents \u2014 unsupported")}`);
   }
+  if (opts.manifest) {
+    await runAction(await buildManifestAction(agent, sel, opts.version));
+  }
 }
 function warnPlaceholders(sel) {
   const offenders = [];
@@ -1381,7 +1469,7 @@ function collect(value, previous) {
 }
 var program = new Command();
 program.name("agent-harness").description("Dotfiles-for-AI-agents bootstrapper \u2014 configure MCPs, skills, and plugins across Claude Code, Codex, and OpenCode.").version(package_default.version);
-program.command("init", { isDefault: true }).description("Configure agents on this machine (user-scope MCPs, skills, plugins), then print the login block.").option("-a, --agent <id>", "target agent (repeatable)", collect, []).option("--mcp <id>", "MCP to install (repeatable)", collect, []).option("--skill <id>", "skill to install (repeatable)", collect, []).option("--plugin <id>", "plugin to install (repeatable)", collect, []).option("--subagent <id>", "custom agent to install (repeatable)", collect, []).option("--all", "select every catalog item", false).option("-y, --yes", "assume defaults, no prompts (CI)", false).option("--dry-run", "show actions without writing anything", false).option("--force", "overwrite existing entries instead of skipping", false).action(async (opts) => {
+program.command("init", { isDefault: true }).description("Configure agents on this machine (user-scope MCPs, skills, plugins), then print the login block.").option("-a, --agent <id>", "target agent (repeatable)", collect, []).option("--mcp <id>", "MCP to install (repeatable)", collect, []).option("--skill <id>", "skill to install (repeatable)", collect, []).option("--plugin <id>", "plugin to install (repeatable)", collect, []).option("--subagent <id>", "custom agent to install (repeatable)", collect, []).option("--all", "select every catalog item", false).option("--no-manifest", "do not record what was installed in the agent's global instructions file").option("-y, --yes", "assume defaults, no prompts (CI)", false).option("--dry-run", "show actions without writing anything", false).option("--force", "overwrite existing entries instead of skipping", false).action(async (opts) => {
   setRunContext({ dryRun: !!opts.dryRun, force: !!opts.force, yes: !!opts.yes });
   await runInitCommand({
     agent: opts.agent,
@@ -1390,7 +1478,9 @@ program.command("init", { isDefault: true }).description("Configure agents on th
     plugin: opts.plugin,
     subagent: opts.subagent,
     all: !!opts.all,
-    yes: !!opts.yes
+    manifest: opts.manifest !== false,
+    yes: !!opts.yes,
+    version: package_default.version
   });
 });
 program.command("scaffold").description("Scaffold the current repo: CLAUDE.md, AGENTS.md, skill memory, project-scoped skills, project .mcp.json, and merge .gitignore.").option("--mcp <id>", "MCP to include in project config (repeatable)", collect, []).option("--skill <id>", "skill to install into the repo, project-scoped (repeatable)", collect, []).option("--subagent <id>", "custom agent to install into the repo, project-scoped (repeatable)", collect, []).option("--with-claude-md", "write CLAUDE.md", false).option("--with-agents-md", "write AGENTS.md", false).option("--with-memory", "write the skill memory file", false).option("--with-opencode", "also write a project opencode.json", false).option("--memory-dest <path>", "destination path for the memory file").option("--no-gitignore", "do not merge .gitignore").option("--all", "scaffold all docs + all catalog MCPs", false).option("-y, --yes", "assume defaults, no prompts (CI)", false).option("--dry-run", "show actions without writing anything", false).option("--force", "overwrite existing template files", false).action(async (opts) => {

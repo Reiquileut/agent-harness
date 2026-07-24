@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 #
 # End-to-end checks for CI. Exercises real writes into a throwaway HOME and a
-# throwaway repo, then asserts results + idempotency. No real agents or network
-# are needed: `-a` forces agent selection, and config-file merges + local skill
-# copies don't require the agent binaries. Portable across Linux (HOME) and
-# Windows git-bash (USERPROFILE) — both are set.
+# throwaway repo, then asserts results + idempotency. No real agents are needed:
+# `-a` forces agent selection, and config-file merges + local skill copies don't
+# require the agent binaries. Remote-source skills (archify) do try the network,
+# but fall back to their bundled copy, so the assertions hold offline too.
+# Portable across Linux (HOME) and Windows git-bash (USERPROFILE) — both are set.
 set -uo pipefail
 
 CLI="$PWD/dist/cli.js"
@@ -30,6 +31,11 @@ chk "binary asset copied intact"         'cmp -s "$PWD/assets/skills/shadcn/asse
 chk "impeccable scoped out of codex"     '[ ! -d "$H/.agents/skills/impeccable" ]'
 chk "pencil scoped out of codex"         '! grep -q "mcp_servers.pencil" "$H/.codex/config.toml"'
 chk "custom agents not installed (no claude-code)" '[ ! -d "$H/.claude/agents" ]'
+chk "archify installed (remote or fallback)" '[ -f "$H/.agents/skills/archify/SKILL.md" ]'
+chk "deep nested skill file copied"      '[ -f "$H/.agents/skills/archify/renderers/shared/geometry.mjs" ]'
+chk "manifest written for codex"         'grep -q "BEGIN agent-harness" "$H/.codex/AGENTS.md"'
+chk "manifest lists a prerequisite"      'grep -q "Orca desktop app" "$H/.codex/AGENTS.md"'
+chk "manifest lists env vars"            'grep -q "N8N_API_KEY" "$H/.codex/AGENTS.md"'
 
 cp "$H/.codex/config.toml" "$H/before.toml"
 HOME="$H" USERPROFILE="$H" node "$CLI" init -y -a codex -a opencode --all >/dev/null 2>&1

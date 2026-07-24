@@ -105,6 +105,34 @@
       "label": "Paper Diário Atalaia — inteligência política diária/semanal/mensal (PT)",
       "source": "local",
       "skill": "paper-diario-atalaia"
+    },
+    {
+      "id": "archify",
+      "label": "Archify — architecture/workflow/sequence diagrams as standalone HTML (v2.12, MIT)",
+      "source": "tt-a1i/archify",
+      "skill": "archify",
+      "requires": ["Node >= 18"]
+    },
+    {
+      "id": "computer-use",
+      "label": "Computer Use — drive desktop app windows via accessibility tree (requires Orca app)",
+      "source": "local",
+      "skill": "computer-use",
+      "requires": ["Orca desktop app (`orca` on PATH)"]
+    },
+    {
+      "id": "orca-cli",
+      "label": "Orca CLI — worktrees, terminals & embedded browser (requires Orca app)",
+      "source": "local",
+      "skill": "orca-cli",
+      "requires": ["Orca desktop app (`orca` on PATH)"]
+    },
+    {
+      "id": "orchestration",
+      "label": "Orchestration — multi-agent coordination, task DAGs & decision gates (requires Orca app)",
+      "source": "local",
+      "skill": "orchestration",
+      "requires": ["Orca desktop app (`orca` on PATH)"]
     }
   ],
   "subagents": [
