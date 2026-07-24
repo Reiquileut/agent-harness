@@ -37,6 +37,7 @@ import {
   hasLocalSkill,
   isLocalSkill,
 } from '../core/skills';
+import { buildManifestAction } from '../core/manifest';
 import { buildSubagentCopyAction } from '../core/subagents';
 import { type ScaffoldPlan, buildScaffoldActions } from './scaffold';
 import { promptInitSelection } from '../ui/prompts';
@@ -48,7 +49,11 @@ export interface InitOptions {
   plugin: string[];
   subagent: string[];
   all: boolean;
+  /** Record the installed inventory in each agent's global instructions file. */
+  manifest: boolean;
   yes: boolean;
+  /** Stamped into the manifest block so a machine reports how it was built. */
+  version: string;
 }
 
 export interface Selection {
@@ -139,7 +144,7 @@ export async function runInitCommand(opts: InitOptions): Promise<void> {
   for (const agent of selection.agents) {
     log.plain('');
     log.step(pc.bold(agent.label));
-    await configureAgent(agent, selection);
+    await configureAgent(agent, selection, opts);
   }
 
   if (selection.repo) {
@@ -154,7 +159,11 @@ export async function runInitCommand(opts: InitOptions): Promise<void> {
   printAuthBlock(selection);
 }
 
-async function configureAgent(agent: AgentInfo, sel: Selection): Promise<void> {
+async function configureAgent(
+  agent: AgentInfo,
+  sel: Selection,
+  opts: InitOptions,
+): Promise<void> {
   // MCPs (respecting per-MCP agent scoping)
   if (agent.supports.mcp) {
     const applicable = sel.mcps.filter((m) => mcpAppliesTo(m, agent.id));
@@ -209,6 +218,11 @@ async function configureAgent(agent: AgentInfo, sel: Selection): Promise<void> {
     }
   } else if (sel.subagents.length) {
     log.plain(`   ${pc.dim('· skip agents — unsupported')}`);
+  }
+
+  // Manifest — what got installed, so the agent can read it back later.
+  if (opts.manifest) {
+    await runAction(await buildManifestAction(agent, sel, opts.version));
   }
 }
 

@@ -26,6 +26,7 @@ program
   .option('--plugin <id>', 'plugin to install (repeatable)', collect, [])
   .option('--subagent <id>', 'custom agent to install (repeatable)', collect, [])
   .option('--all', 'select every catalog item', false)
+  .option('--no-manifest', "do not record what was installed in the agent's global instructions file")
   .option('-y, --yes', 'assume defaults, no prompts (CI)', false)
   .option('--dry-run', 'show actions without writing anything', false)
   .option('--force', 'overwrite existing entries instead of skipping', false)
@@ -38,7 +39,9 @@ program
       plugin: opts.plugin,
       subagent: opts.subagent,
       all: !!opts.all,
+      manifest: opts.manifest !== false,
       yes: !!opts.yes,
+      version: pkg.version,
     });
   });
 

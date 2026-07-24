@@ -216,3 +216,39 @@ export function mergeGitignore(
   }
   return { content, added: toAdd };
 }
+
+// ---------------------------------------------------------------------------
+// Managed block merge (pure — no IO)
+// ---------------------------------------------------------------------------
+export const MANIFEST_BEGIN = '<!-- BEGIN agent-harness -->';
+export const MANIFEST_END = '<!-- END agent-harness -->';
+
+/**
+ * Replace (or append) a marker-delimited block inside a file we don't own.
+ * Everything outside the markers is preserved byte-for-byte — these files are
+ * the user's (e.g. ~/.claude/CLAUDE.md). Idempotent: same inputs, same output.
+ *
+ * A begin marker without a matching end (hand-edited file) is left alone and
+ * the block is appended, rather than swallowing the rest of the file.
+ */
+export function mergeManagedBlock(
+  existing: string | null,
+  body: string,
+  begin: string,
+  end: string,
+): string {
+  const base = existing ?? '';
+  const block = `${begin}\n${body.trim()}\n${end}\n`;
+
+  const start = base.indexOf(begin);
+  const stop = start === -1 ? -1 : base.indexOf(end, start + begin.length);
+  if (start !== -1 && stop !== -1) {
+    const before = base.slice(0, start);
+    const after = base.slice(stop + end.length).replace(/^\r?\n/, '');
+    return `${before}${block}${after}`;
+  }
+
+  const prefix = base.length === 0 || base.endsWith('\n') ? base : `${base}\n`;
+  const gap = prefix.length && !prefix.endsWith('\n\n') ? '\n' : '';
+  return `${prefix}${gap}${block}`;
+}
