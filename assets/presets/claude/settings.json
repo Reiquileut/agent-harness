@@ -1,0 +1,50 @@
+{
+  "env": {
+    "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1"
+  },
+  "permissions": {
+    "allow": [
+      "WebSearch",
+      "WebFetch(domain:chromewebstore.google.com)",
+      "Bash(curl:*)",
+      "Bash(powershell:*)",
+      "Bash(claude doctor:*)",
+      "Bash(claude mcp list:*)",
+      "mcp__chrome-devtools__list_pages",
+      "mcp__chrome-devtools__navigate_page",
+      "mcp__chrome-devtools__take_screenshot",
+      "mcp__chrome-devtools__take_snapshot",
+      "mcp__chrome-devtools__click",
+      "mcp__plugin_github_github__get_file_contents",
+      "mcp__plugin_github_github__search_code",
+      "mcp__pencil"
+    ],
+    "defaultMode": "auto"
+  },
+  "model": "claude-fable-5-1[1m]",
+  "effortLevel": "xhigh",
+  "modelSettings": {
+    "claude-fable-5-1": { "effortLevel": "xhigh" },
+    "claude-opus-5": { "effortLevel": "xhigh" },
+    "claude-sonnet-5": { "effortLevel": "high" }
+  },
+  "alwaysThinkingEnabled": true,
+  "switchModelsOnFlag": true,
+  "teammateMode": "auto",
+  "useAutoModeDuringPlan": true,
+  "skipAutoPermissionPrompt": true,
+  "skipDangerousModePermissionPrompt": true,
+  "skipWorkflowUsageWarning": true,
+  "statusLine": {
+    "type": "command",
+    "command": "bash ~/.claude/statusline-command.sh"
+  },
+  "tui": "fullscreen",
+  "theme": "light",
+  "verbose": true,
+  "voice": { "enabled": true, "mode": "hold" },
+  "voiceEnabled": true,
+  "remoteControlAtStartup": true,
+  "inputNeededNotifEnabled": true,
+  "agentPushNotifEnabled": true
+}

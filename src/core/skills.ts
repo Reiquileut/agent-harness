@@ -3,20 +3,29 @@
  * which already maps each agent's install path. We orchestrate the call and
  * keep a direct-copy fallback from assets/skills/<id>/ for when the CLI is
  * unavailable or installs to the wrong place (see plan's drift TODO).
+ *
+ * Skills that ship their own installer (catalog `installer`, e.g.
+ * `npx impeccable install`) run that instead — once per scope, with every
+ * selected agent's provider name joined into a single call.
  */
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import type { Action } from './actions';
 import type { AgentInfo } from './agents';
-import { assetsDir } from './catalog';
+import { assetsDir, skillAppliesTo } from './catalog';
 import type { SkillEntry } from './catalog';
-import { expandHome, pathExists, readText } from './fsx';
+import { expandHome, homeDir, pathExists, readText } from './fsx';
 
 export type SkillScope = 'user' | 'project';
 
 /** Skills with source "local" are bundled in assets/skills/<id>/ and copied directly. */
 export function isLocalSkill(skill: SkillEntry): boolean {
   return skill.source === 'local';
+}
+
+/** Skills with a catalog `installer` run their own CLI instead of `npx skills`. */
+export function hasInstaller(skill: SkillEntry): boolean {
+  return Boolean(skill.installer);
 }
 
 /**
@@ -39,6 +48,38 @@ export function buildSkillAction(agent: AgentInfo, skill: SkillEntry, scope: Ski
   ];
   if (scope === 'user') args.push('-g');
   return { kind: 'exec', label, cmd: 'npx', args, timeout: 180_000 };
+}
+
+/**
+ * Installer-backed skill: one exec for all applicable agents. `{provider}` →
+ * comma-joined provider names, `{scope}` → `global` | `project`.
+ */
+export function buildInstallerSkillAction(
+  agents: AgentInfo[],
+  skill: SkillEntry,
+  scope: SkillScope,
+): Action {
+  const inst = skill.installer;
+  const applicable = agents.filter((a) => a.supports.skills && skillAppliesTo(skill, a.id));
+  const label = `Skill ${skill.skill} → ${applicable.map((a) => a.label).join(', ') || 'no agent'}`;
+  if (!inst) {
+    return { kind: 'skip', label, reason: 'no installer declared' };
+  }
+  const providers = applicable
+    .map((a) => inst.providers[a.id])
+    .filter((p): p is string => Boolean(p));
+  if (providers.length === 0) {
+    return { kind: 'skip', label, reason: 'no selected agent supported by this installer' };
+  }
+  const scopeWord = scope === 'user' ? 'global' : 'project';
+  const args = inst.args.map((a) =>
+    a.replaceAll('{provider}', providers.join(',')).replaceAll('{scope}', scopeWord),
+  );
+  // Global installs run from the home dir: installers that also drop
+  // project-level files (impeccable writes .codex/hooks.json into cwd) then
+  // land them in ~/.codex, ~/.claude, … instead of whatever repo we're in.
+  const cwd = scope === 'user' ? homeDir() : undefined;
+  return { kind: 'exec', label, cmd: inst.cmd, args, cwd, timeout: 300_000 };
 }
 
 export function localSkillDir(skill: SkillEntry): string {

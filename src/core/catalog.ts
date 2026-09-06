@@ -15,6 +15,21 @@ import { readText } from './fsx';
 // ---------------------------------------------------------------------------
 // Schema
 // ---------------------------------------------------------------------------
+
+/**
+ * Per-agent tweaks for one MCP entry, keyed by agent id. Lets a single catalog
+ * entry describe a server whose launch differs per agent (e.g. Pencil takes
+ * `--agent claudeCodeCLI` / `codexCLI` / `openCodeCLI`) or that needs
+ * agent-native keys we don't model neutrally (Codex `startup_timeout_sec`,
+ * per-tool `approval_mode`, …) via `extra`.
+ */
+const McpAgentOverrideSchema = z.object({
+  command: z.string().min(1).optional(),
+  args: z.array(z.string()).optional(),
+  /** Raw keys merged into the rendered server entry for that agent. */
+  extra: z.record(z.string(), z.unknown()).default({}),
+});
+
 const McpHttpSchema = z.object({
   id: z.string().min(1),
   label: z.string().min(1),
@@ -24,6 +39,7 @@ const McpHttpSchema = z.object({
   env: z.array(z.string()).default([]),
   /** Restrict this MCP to specific agents (omit = all agents). */
   agents: z.array(z.string()).optional(),
+  overrides: z.record(z.string(), McpAgentOverrideSchema).default({}),
 });
 
 const McpStdioSchema = z.object({
@@ -35,14 +51,27 @@ const McpStdioSchema = z.object({
   env: z.array(z.string()).default([]),
   /** Restrict this MCP to specific agents (omit = all agents). */
   agents: z.array(z.string()).optional(),
+  overrides: z.record(z.string(), McpAgentOverrideSchema).default({}),
 });
 
 const McpSchema = z.discriminatedUnion('transport', [McpHttpSchema, McpStdioSchema]);
 
+/**
+ * A skill that ships its own installer CLI (e.g. `npx impeccable install`)
+ * instead of the generic `npx skills add`. `{provider}` in args is replaced by
+ * the comma-joined provider names of the selected agents (per `providers`),
+ * `{scope}` by `global` or `project`. Agents missing from `providers` skip.
+ */
+const SkillInstallerSchema = z.object({
+  cmd: z.string().min(1),
+  args: z.array(z.string()).default([]),
+  providers: z.record(z.string(), z.string()).default({}),
+});
+
 const SkillSchema = z.object({
   id: z.string().min(1),
   label: z.string().optional(),
-  /** owner/repo, URL, local dir, or "local" (bundled in assets/skills/<id>/). */
+  /** owner/repo, URL, local dir, "local" (bundled in assets/skills/<id>/), or informational when `installer` is set. */
   source: z.string().min(1),
   /** the specific skill name inside that source. */
   skill: z.string().min(1),
@@ -50,21 +79,27 @@ const SkillSchema = z.object({
   agents: z.array(z.string()).optional(),
   /** External prerequisites the installer can't provide (listed in the manifest). */
   requires: z.array(z.string()).optional(),
+  installer: SkillInstallerSchema.optional(),
 });
 
 const SubagentSchema = z.object({
   id: z.string().min(1),
   label: z.string().optional(),
-  /** filename inside assets/agents/ (bundled, verbatim copy). */
+  /** Claude Code variant: filename inside assets/agents/ (Markdown + frontmatter), copied verbatim. */
   file: z.string().min(1),
+  /** Codex variant: filename inside assets/agents/ (TOML), copied verbatim. Omit = not offered to Codex. */
+  codex_file: z.string().optional(),
 });
 
-const PluginSchema = z.object({
+const PluginSchemaRaw = z.object({
   id: z.string().min(1),
   label: z.string().optional(),
-  agent: z.string().default('claude-code'),
-  /** owner/repo or git URL of the marketplace (used by `claude plugin marketplace add`). */
-  marketplace: z.string().min(1),
+  /** @deprecated single-agent form; use `agents`. */
+  agent: z.string().optional(),
+  /** Restrict to specific agents (omit = every agent with a plugin system). */
+  agents: z.array(z.string()).optional(),
+  /** owner/repo or git URL of the marketplace. Empty allowed only when `builtin`. */
+  marketplace: z.string().default(''),
   /**
    * The marketplace's declared name (its marketplace.json "name"), used in the
    * install ref `<plugin>@<name>`. Defaults to the last path segment of
@@ -73,6 +108,46 @@ const PluginSchema = z.object({
   name: z.string().optional(),
   /** plugin names to install from that marketplace. */
   install: z.array(z.string()).default([]),
+  /**
+   * The agent app registers this marketplace itself (Codex `openai-curated`,
+   * `openai-bundled`, …): skip the marketplace step and only enable the plugins.
+   */
+  builtin: z.boolean().default(false),
+});
+
+const PluginSchema = PluginSchemaRaw.transform((p) => ({
+  ...p,
+  agents: p.agents ?? (p.agent ? [p.agent] : undefined),
+})).refine((p) => p.builtin || p.marketplace.length > 0, {
+  message: 'plugin needs a `marketplace` unless `builtin` is true',
+}).refine((p) => p.builtin ? Boolean(p.name) : true, {
+  message: 'builtin plugins need an explicit marketplace `name`',
+});
+
+/**
+ * Presets — merge/copy config files into the agents' home dirs (settings,
+ * status line, global instructions). `merge-json` / `merge-toml` deep-merge the
+ * asset into the destination (arrays union, so re-runs never duplicate);
+ * `copy` writes the asset verbatim (`keep` = never overwrite an existing file
+ * unless --force). `{{HOME}}` inside an asset expands to the user's home dir.
+ */
+const PresetFileSchema = z.object({
+  op: z.enum(['merge-json', 'merge-toml', 'copy']),
+  /** asset path relative to assets/ */
+  asset: z.string().min(1),
+  /** destination path; `~` expands to the home dir */
+  dest: z.string().min(1),
+  /** Restrict this file to specific agents (omit = whenever the preset applies). */
+  agents: z.array(z.string()).optional(),
+  keep: z.boolean().default(false),
+});
+
+const PresetSchema = z.object({
+  id: z.string().min(1),
+  label: z.string().optional(),
+  /** Restrict this preset to specific agents (omit = all agents). */
+  agents: z.array(z.string()).optional(),
+  files: z.array(PresetFileSchema).min(1),
 });
 
 const TemplatesSchema = z.object({
@@ -87,15 +162,19 @@ const CatalogSchema = z.object({
   skills: z.array(SkillSchema).default([]),
   subagents: z.array(SubagentSchema).default([]),
   plugins: z.array(PluginSchema).default([]),
+  presets: z.array(PresetSchema).default([]),
   templates: TemplatesSchema,
   /** Entries the `scaffold` command merges into the project .gitignore. */
   gitignore: z.array(z.string()).default([]),
 });
 
 export type McpEntry = z.infer<typeof McpSchema>;
+export type McpAgentOverride = z.infer<typeof McpAgentOverrideSchema>;
 export type SkillEntry = z.infer<typeof SkillSchema>;
 export type SubagentEntry = z.infer<typeof SubagentSchema>;
 export type PluginEntry = z.infer<typeof PluginSchema>;
+export type PresetEntry = z.infer<typeof PresetSchema>;
+export type PresetFile = z.infer<typeof PresetFileSchema>;
 export type CatalogTemplates = z.infer<typeof TemplatesSchema>;
 export type CatalogData = z.infer<typeof CatalogSchema>;
 
@@ -167,5 +246,18 @@ export function mcpAppliesTo(mcp: McpEntry, agentId: string): boolean {
 
 /** True when a skill entry should be installed for the given agent. */
 export function skillAppliesTo(skill: SkillEntry, agentId: string): boolean {
-  return appliesToAgent(skill.agents, agentId);
+  if (!appliesToAgent(skill.agents, agentId)) return false;
+  const providers = skill.installer?.providers;
+  if (providers && Object.keys(providers).length) return agentId in providers;
+  return true;
+}
+
+/** True when a plugin entry should be installed for the given agent. */
+export function pluginAppliesTo(plugin: PluginEntry, agentId: string): boolean {
+  return appliesToAgent(plugin.agents, agentId);
+}
+
+/** True when a preset should be applied given the selected agents. */
+export function presetAppliesTo(preset: PresetEntry, agentIds: string[]): boolean {
+  return agentIds.some((id) => appliesToAgent(preset.agents, id));
 }

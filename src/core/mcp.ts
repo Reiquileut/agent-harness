@@ -9,6 +9,10 @@
  *   - Codex:    env_vars = ["NAME"]     (shell passthrough list)
  *   - OpenCode: environment.NAME = "{env:NAME}"
  *
+ * Per-agent `overrides` (catalog) let one entry vary its command/args per agent
+ * and carry agent-native `extra` keys (Codex `startup_timeout_sec`, per-tool
+ * `approval_mode`, …). They're resolved here before rendering.
+ *
  * Strategy per agent (see plan):
  *   - Claude  user  -> exec `claude mcp add ... --scope user` (flag form; avoids
  *                      hand-editing the fragile ~/.claude.json)
@@ -48,41 +52,62 @@ function safeParseToml(text: string): Record<string, unknown> | null {
 }
 
 // ---------------------------------------------------------------------------
+// Per-agent override resolution
+// ---------------------------------------------------------------------------
+
+/** The entry with the agent's `overrides` applied, plus its raw `extra` keys. */
+export function resolveMcpForAgent(
+  m: McpEntry,
+  agentId: string,
+): { entry: McpEntry; extra: Record<string, unknown> } {
+  const o = m.overrides[agentId];
+  if (!o) return { entry: m, extra: {} };
+  if (m.transport === 'http') return { entry: m, extra: o.extra };
+  return {
+    entry: { ...m, command: o.command ?? m.command, args: o.args ?? m.args },
+    extra: o.extra,
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Translations (neutral -> agent shape)
 // ---------------------------------------------------------------------------
 
 /** Claude `.mcp.json` server value (also the shape for project scope). */
-export function toClaudeServer(m: McpEntry): Record<string, unknown> {
+export function toClaudeServer(src: McpEntry): Record<string, unknown> {
+  const { entry: m, extra } = resolveMcpForAgent(src, 'claude-code');
   if (m.transport === 'http') {
     const v: Record<string, unknown> = { type: 'http', url: m.url };
     if (Object.keys(m.headers).length) v.headers = m.headers;
-    return v;
+    return { ...v, ...extra };
   }
   const v: Record<string, unknown> = { command: m.command, args: m.args };
   if (m.env.length) {
     v.env = Object.fromEntries(m.env.map((name) => [name, `\${${name}}`]));
   }
-  return v;
+  return { ...v, ...extra };
 }
 
 /** Codex `[mcp_servers.<id>]` table value. */
-export function toCodexServer(m: McpEntry): Record<string, unknown> {
+export function toCodexServer(src: McpEntry): Record<string, unknown> {
+  const { entry: m, extra } = resolveMcpForAgent(src, 'codex');
   if (m.transport === 'http') {
     const v: Record<string, unknown> = { url: m.url };
     if (Object.keys(m.headers).length) v.http_headers = m.headers;
-    return v;
+    return { ...v, ...extra };
   }
   const v: Record<string, unknown> = { command: m.command, args: m.args };
   if (m.env.length) v.env_vars = m.env; // shell passthrough by name
-  return v;
+  return { ...v, ...extra };
 }
 
 /** OpenCode `mcp.<id>` value. */
-export function toOpencodeServer(m: McpEntry): Record<string, unknown> {
+export function toOpencodeServer(src: McpEntry): Record<string, unknown> {
+  const { entry: m, extra } = resolveMcpForAgent(src, 'opencode');
   if (m.transport === 'http') {
     const v: Record<string, unknown> = { type: 'remote', url: m.url, enabled: true };
     if (Object.keys(m.headers).length) v.headers = m.headers;
-    return v;
+    return { ...v, ...extra };
   }
   const v: Record<string, unknown> = {
     type: 'local',
@@ -92,7 +117,7 @@ export function toOpencodeServer(m: McpEntry): Record<string, unknown> {
   if (m.env.length) {
     v.environment = Object.fromEntries(m.env.map((name) => [name, `{env:${name}}`]));
   }
-  return v;
+  return { ...v, ...extra };
 }
 
 // ---------------------------------------------------------------------------
@@ -125,7 +150,8 @@ async function claudeHasMcp(id: string): Promise<boolean> {
   }
 }
 
-async function buildClaudeUserMcp(m: McpEntry, label: string): Promise<Action> {
+async function buildClaudeUserMcp(src: McpEntry, label: string): Promise<Action> {
+  const { entry: m } = resolveMcpForAgent(src, 'claude-code');
   // User-scope Claude MCP goes through the `claude` CLI. If Claude Code isn't
   // installed on this machine, skip gracefully instead of erroring — install
   // Claude and re-run (or it picks up project .mcp.json from `scaffold`).

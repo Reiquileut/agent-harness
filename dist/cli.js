@@ -7,8 +7,8 @@ import process9 from "process";
 // package.json
 var package_default = {
   name: "@r2t/agent-harness",
-  version: "1.3.0",
-  description: "Dotfiles-for-AI-agents bootstrapper: one command to configure MCPs, skills, and plugins across Claude Code, Codex, and OpenCode.",
+  version: "1.4.0",
+  description: "Dotfiles-for-AI-agents bootstrapper: one command to configure MCPs, skills, plugins, custom agents and settings presets across Claude Code, Codex, and OpenCode.",
   type: "module",
   bin: {
     "agent-harness": "dist/cli.js"
@@ -297,10 +297,11 @@ var AGENTS = [
     detectFiles: ["~/.claude.json"],
     supports: { mcp: true, skills: true, plugins: true, subagents: true },
     mcpUserMethod: "claude-cli",
+    pluginMethod: "claude-cli",
     projectMcpFile: ".mcp.json",
     globalInstructionsFile: "~/.claude/CLAUDE.md",
     skills: { userDir: "~/.claude/skills", projectDir: ".claude/skills" },
-    subagents: { userDir: "~/.claude/agents", projectDir: ".claude/agents" }
+    subagents: { userDir: "~/.claude/agents", projectDir: ".claude/agents", format: "md" }
   },
   {
     id: "codex",
@@ -311,12 +312,15 @@ var AGENTS = [
     bin: "codex",
     detectDirs: ["~/.codex"],
     detectFiles: ["~/.codex/config.toml"],
-    supports: { mcp: true, skills: true, plugins: false, subagents: false },
+    supports: { mcp: true, skills: true, plugins: true, subagents: true },
     mcpUserMethod: "codex-toml",
+    pluginMethod: "codex-toml",
     userMcpFile: "~/.codex/config.toml",
     globalInstructionsFile: "~/.codex/AGENTS.md",
     // Codex reads ~/.agents/skills (user) and .agents/skills (repo) per current docs.
-    skills: { userDir: "~/.agents/skills", projectDir: ".agents/skills" }
+    skills: { userDir: "~/.agents/skills", projectDir: ".agents/skills" },
+    // Codex custom agents are TOML files under ~/.codex/agents (user) / .codex/agents (repo).
+    subagents: { userDir: "~/.codex/agents", projectDir: ".codex/agents", format: "toml" }
   },
   {
     id: "opencode",
@@ -370,6 +374,12 @@ import path3 from "path";
 import { fileURLToPath } from "url";
 import process3 from "process";
 import { z } from "zod";
+var McpAgentOverrideSchema = z.object({
+  command: z.string().min(1).optional(),
+  args: z.array(z.string()).optional(),
+  /** Raw keys merged into the rendered server entry for that agent. */
+  extra: z.record(z.string(), z.unknown()).default({})
+});
 var McpHttpSchema = z.object({
   id: z.string().min(1),
   label: z.string().min(1),
@@ -378,7 +388,8 @@ var McpHttpSchema = z.object({
   headers: z.record(z.string(), z.string()).default({}),
   env: z.array(z.string()).default([]),
   /** Restrict this MCP to specific agents (omit = all agents). */
-  agents: z.array(z.string()).optional()
+  agents: z.array(z.string()).optional(),
+  overrides: z.record(z.string(), McpAgentOverrideSchema).default({})
 });
 var McpStdioSchema = z.object({
   id: z.string().min(1),
@@ -388,33 +399,45 @@ var McpStdioSchema = z.object({
   args: z.array(z.string()).default([]),
   env: z.array(z.string()).default([]),
   /** Restrict this MCP to specific agents (omit = all agents). */
-  agents: z.array(z.string()).optional()
+  agents: z.array(z.string()).optional(),
+  overrides: z.record(z.string(), McpAgentOverrideSchema).default({})
 });
 var McpSchema = z.discriminatedUnion("transport", [McpHttpSchema, McpStdioSchema]);
+var SkillInstallerSchema = z.object({
+  cmd: z.string().min(1),
+  args: z.array(z.string()).default([]),
+  providers: z.record(z.string(), z.string()).default({})
+});
 var SkillSchema = z.object({
   id: z.string().min(1),
   label: z.string().optional(),
-  /** owner/repo, URL, local dir, or "local" (bundled in assets/skills/<id>/). */
+  /** owner/repo, URL, local dir, "local" (bundled in assets/skills/<id>/), or informational when `installer` is set. */
   source: z.string().min(1),
   /** the specific skill name inside that source. */
   skill: z.string().min(1),
   /** Restrict this skill to specific agents (omit = all agents). */
   agents: z.array(z.string()).optional(),
   /** External prerequisites the installer can't provide (listed in the manifest). */
-  requires: z.array(z.string()).optional()
+  requires: z.array(z.string()).optional(),
+  installer: SkillInstallerSchema.optional()
 });
 var SubagentSchema = z.object({
   id: z.string().min(1),
   label: z.string().optional(),
-  /** filename inside assets/agents/ (bundled, verbatim copy). */
-  file: z.string().min(1)
+  /** Claude Code variant: filename inside assets/agents/ (Markdown + frontmatter), copied verbatim. */
+  file: z.string().min(1),
+  /** Codex variant: filename inside assets/agents/ (TOML), copied verbatim. Omit = not offered to Codex. */
+  codex_file: z.string().optional()
 });
-var PluginSchema = z.object({
+var PluginSchemaRaw = z.object({
   id: z.string().min(1),
   label: z.string().optional(),
-  agent: z.string().default("claude-code"),
-  /** owner/repo or git URL of the marketplace (used by `claude plugin marketplace add`). */
-  marketplace: z.string().min(1),
+  /** @deprecated single-agent form; use `agents`. */
+  agent: z.string().optional(),
+  /** Restrict to specific agents (omit = every agent with a plugin system). */
+  agents: z.array(z.string()).optional(),
+  /** owner/repo or git URL of the marketplace. Empty allowed only when `builtin`. */
+  marketplace: z.string().default(""),
   /**
    * The marketplace's declared name (its marketplace.json "name"), used in the
    * install ref `<plugin>@<name>`. Defaults to the last path segment of
@@ -422,7 +445,37 @@ var PluginSchema = z.object({
    */
   name: z.string().optional(),
   /** plugin names to install from that marketplace. */
-  install: z.array(z.string()).default([])
+  install: z.array(z.string()).default([]),
+  /**
+   * The agent app registers this marketplace itself (Codex `openai-curated`,
+   * `openai-bundled`, …): skip the marketplace step and only enable the plugins.
+   */
+  builtin: z.boolean().default(false)
+});
+var PluginSchema = PluginSchemaRaw.transform((p) => ({
+  ...p,
+  agents: p.agents ?? (p.agent ? [p.agent] : void 0)
+})).refine((p) => p.builtin || p.marketplace.length > 0, {
+  message: "plugin needs a `marketplace` unless `builtin` is true"
+}).refine((p) => p.builtin ? Boolean(p.name) : true, {
+  message: "builtin plugins need an explicit marketplace `name`"
+});
+var PresetFileSchema = z.object({
+  op: z.enum(["merge-json", "merge-toml", "copy"]),
+  /** asset path relative to assets/ */
+  asset: z.string().min(1),
+  /** destination path; `~` expands to the home dir */
+  dest: z.string().min(1),
+  /** Restrict this file to specific agents (omit = whenever the preset applies). */
+  agents: z.array(z.string()).optional(),
+  keep: z.boolean().default(false)
+});
+var PresetSchema = z.object({
+  id: z.string().min(1),
+  label: z.string().optional(),
+  /** Restrict this preset to specific agents (omit = all agents). */
+  agents: z.array(z.string()).optional(),
+  files: z.array(PresetFileSchema).min(1)
 });
 var TemplatesSchema = z.object({
   claude_md: z.string().min(1),
@@ -435,6 +488,7 @@ var CatalogSchema = z.object({
   skills: z.array(SkillSchema).default([]),
   subagents: z.array(SubagentSchema).default([]),
   plugins: z.array(PluginSchema).default([]),
+  presets: z.array(PresetSchema).default([]),
   templates: TemplatesSchema,
   /** Entries the `scaffold` command merges into the project .gitignore. */
   gitignore: z.array(z.string()).default([])
@@ -485,33 +539,57 @@ function mcpAppliesTo(mcp, agentId) {
   return appliesToAgent(mcp.agents, agentId);
 }
 function skillAppliesTo(skill, agentId) {
-  return appliesToAgent(skill.agents, agentId);
+  if (!appliesToAgent(skill.agents, agentId)) return false;
+  const providers = skill.installer?.providers;
+  if (providers && Object.keys(providers).length) return agentId in providers;
+  return true;
+}
+function pluginAppliesTo(plugin, agentId) {
+  return appliesToAgent(plugin.agents, agentId);
+}
+function presetAppliesTo(preset, agentIds) {
+  return agentIds.some((id) => appliesToAgent(preset.agents, id));
 }
 
 // src/core/plugins.ts
+import path4 from "path";
 function marketplaceName(plugin) {
   if (plugin.name) return plugin.name;
   const seg = plugin.marketplace.split("/").pop() ?? plugin.marketplace;
   return seg.replace(/\.git$/, "");
 }
+function marketplaceGitUrl(plugin) {
+  const m = plugin.marketplace;
+  if (/^(https?:|git@|ssh:)/.test(m)) return m;
+  return `https://github.com/${m.replace(/\.git$/, "")}.git`;
+}
 function claudeAvailable() {
   return commandOnPath("claude");
 }
-function buildPluginActions(agent, plugin) {
-  if (!agent.supports.plugins) {
+async function buildPluginActions(agent, plugin) {
+  if (!agent.supports.plugins || !agent.pluginMethod) {
     return [{ kind: "skip", label: `Plugins \u2192 ${agent.label}`, reason: "agent has no plugin system" }];
   }
+  switch (agent.pluginMethod) {
+    case "claude-cli":
+      return buildClaudePluginActions(plugin);
+    case "codex-toml":
+      return [await buildCodexPluginAction(agent, plugin)];
+  }
+}
+function buildClaudePluginActions(plugin) {
   if (!claudeAvailable()) return [];
-  const actions = [
-    {
+  const actions = [];
+  if (!plugin.builtin) {
+    actions.push({
       kind: "exec",
       label: `Marketplace ${plugin.marketplace}`,
       cmd: "claude",
       args: ["plugin", "marketplace", "add", plugin.marketplace],
       timeout: 12e4,
       tolerant: true
-    }
-  ];
+    });
+  }
   const mp = marketplaceName(plugin);
   for (const name of plugin.install) {
     const ref = `${name}@${mp}`;
@@ -545,23 +623,18 @@ async function buildPluginSettingsFallbackAction(plugin) {
     }
   }
   const mpName = marketplaceName(plugin);
-  const repo = plugin.marketplace.replace(/\.git$/, "");
-  const ekm = isRecord(root.extraKnownMarketplaces) ? { ...root.extraKnownMarketplaces } : {};
-  ekm[mpName] = { source: { source: "github", repo } };
-  root.extraKnownMarketplaces = ekm;
+  if (!plugin.builtin) {
+    const repo = plugin.marketplace.replace(/\.git$/, "");
+    const ekm = isRecord(root.extraKnownMarketplaces) ? { ...root.extraKnownMarketplaces } : {};
+    ekm[mpName] = { source: { source: "github", repo } };
+    root.extraKnownMarketplaces = ekm;
+  }
   const enabled = isRecord(root.enabledPlugins) ? { ...root.enabledPlugins } : {};
   for (const name of plugin.install) enabled[`${name}@${mpName}`] = true;
   root.enabledPlugins = enabled;
-  return { kind: "file", label, path: file, before: before ?? null, after: jsonStringify(root) };
-}
-
-// src/core/mcp.ts
-import path4 from "path";
-import process4 from "process";
-import { execa as execa2 } from "execa";
-var OPENCODE_SCHEMA = "https://opencode.ai/config.json";
-function isRecord2(x) {
-  return typeof x === "object" && x !== null && !Array.isArray(x);
+  const after = jsonStringify(root);
+  if (before === after) return { kind: "skip", label, reason: "already in settings.json" };
+  return { kind: "file", label, path: file, before: before ?? null, after };
 }
 function safeParseToml(text) {
   try {
@@ -570,33 +643,110 @@ function safeParseToml(text) {
     return null;
   }
 }
-function toClaudeServer(m) {
+async function buildCodexPluginAction(agent, plugin) {
+  const file = userMcpFileAbs(agent);
+  const mpName = marketplaceName(plugin);
+  const label = `Plugins ${plugin.install.map((p) => `${p}@${mpName}`).join(", ")} \u2192 ${agent.label}`;
+  if (!file) return { kind: "skip", label, reason: "no codex config path" };
+  const before = await readText(file);
+  const root = before && before.trim() ? safeParseToml(before) : {};
+  if (root === null) {
+    return {
+      kind: "note",
+      level: "warn",
+      label,
+      message: `Could not parse ${tildify(file)}; add [marketplaces.${mpName}] / [plugins] manually.`
+    };
+  }
+  const marketplaces = isRecord(root.marketplaces) ? root.marketplaces : {};
+  const plugins = isRecord(root.plugins) ? root.plugins : {};
+  const wantMarketplace = !plugin.builtin && !(mpName in marketplaces);
+  const wantPlugins = plugin.install.map((p) => `${p}@${mpName}`).filter((ref) => {
+    const cur = plugins[ref];
+    if (!isRecord(cur)) return true;
+    return isForce() && cur.enabled !== true;
+  });
+  if (!wantMarketplace && wantPlugins.length === 0) {
+    return { kind: "skip", label, reason: `already in ${path4.basename(file)}` };
+  }
+  const patch = {};
+  if (wantMarketplace) {
+    patch.marketplaces = { [mpName]: { source_type: "git", source: marketplaceGitUrl(plugin) } };
+  }
+  if (wantPlugins.length) {
+    patch.plugins = Object.fromEntries(wantPlugins.map((ref) => [ref, { enabled: true }]));
+  }
+  const mustRewrite = wantPlugins.some((ref) => isRecord(plugins[ref]));
+  if (mustRewrite) {
+    if (before?.includes("#")) {
+      log.warn(`   rewriting ${tildify(file)} (TOML comments may be lost)`);
+    }
+    const next = { ...root };
+    if (wantMarketplace) next.marketplaces = { ...marketplaces, ...patch.marketplaces };
+    next.plugins = { ...plugins, ...patch.plugins };
+    return { kind: "file", label, path: file, before: before ?? null, after: stringifyToml(next) };
+  }
+  let block = stringifyToml(patch);
+  block = block.replace(/^\[(marketplaces|plugins)\]\s*\n+/gm, "");
+  const after = before == null || before.trim() === "" ? block : `${before}${before.endsWith("\n") ? "" : "\n"}
+${block}`;
+  return { kind: "file", label, path: file, before: before ?? null, after };
+}
+
+// src/core/mcp.ts
+import path5 from "path";
+import process4 from "process";
+import { execa as execa2 } from "execa";
+var OPENCODE_SCHEMA = "https://opencode.ai/config.json";
+function isRecord2(x) {
+  return typeof x === "object" && x !== null && !Array.isArray(x);
+}
+function safeParseToml2(text) {
+  try {
+    return parseToml(text);
+  } catch {
+    return null;
+  }
+}
+function resolveMcpForAgent(m, agentId) {
+  const o = m.overrides[agentId];
+  if (!o) return { entry: m, extra: {} };
+  if (m.transport === "http") return { entry: m, extra: o.extra };
+  return {
+    entry: { ...m, command: o.command ?? m.command, args: o.args ?? m.args },
+    extra: o.extra
+  };
+}
+function toClaudeServer(src) {
+  const { entry: m, extra } = resolveMcpForAgent(src, "claude-code");
   if (m.transport === "http") {
     const v2 = { type: "http", url: m.url };
     if (Object.keys(m.headers).length) v2.headers = m.headers;
-    return v2;
+    return { ...v2, ...extra };
   }
   const v = { command: m.command, args: m.args };
   if (m.env.length) {
     v.env = Object.fromEntries(m.env.map((name) => [name, `\${${name}}`]));
   }
-  return v;
+  return { ...v, ...extra };
 }
-function toCodexServer(m) {
+function toCodexServer(src) {
+  const { entry: m, extra } = resolveMcpForAgent(src, "codex");
   if (m.transport === "http") {
     const v2 = { url: m.url };
     if (Object.keys(m.headers).length) v2.http_headers = m.headers;
-    return v2;
+    return { ...v2, ...extra };
   }
   const v = { command: m.command, args: m.args };
   if (m.env.length) v.env_vars = m.env;
-  return v;
+  return { ...v, ...extra };
 }
-function toOpencodeServer(m) {
+function toOpencodeServer(src) {
+  const { entry: m, extra } = resolveMcpForAgent(src, "opencode");
   if (m.transport === "http") {
     const v2 = { type: "remote", url: m.url, enabled: true };
     if (Object.keys(m.headers).length) v2.headers = m.headers;
-    return v2;
+    return { ...v2, ...extra };
   }
   const v = {
     type: "local",
@@ -606,7 +756,7 @@ function toOpencodeServer(m) {
   if (m.env.length) {
     v.environment = Object.fromEntries(m.env.map((name) => [name, `{env:${name}}`]));
   }
-  return v;
+  return { ...v, ...extra };
 }
 async function buildUserMcpAction(agent, m) {
   const label = `MCP ${m.id} \u2192 ${agent.label}`;
@@ -633,7 +783,8 @@ async function claudeHasMcp(id) {
     return false;
   }
 }
-async function buildClaudeUserMcp(m, label) {
+async function buildClaudeUserMcp(src, label) {
+  const { entry: m } = resolveMcpForAgent(src, "claude-code");
   if (!commandOnPath("claude")) {
     return {
       kind: "note",
@@ -662,7 +813,7 @@ async function buildCodexUserMcp(agent, m, label) {
   const file = userMcpFileAbs(agent);
   if (!file) return { kind: "skip", label, reason: "no codex config path" };
   const before = await readText(file);
-  const root = before && before.trim() ? safeParseToml(before) : {};
+  const root = before && before.trim() ? safeParseToml2(before) : {};
   if (root === null) {
     return {
       kind: "note",
@@ -674,7 +825,7 @@ async function buildCodexUserMcp(agent, m, label) {
   const servers = isRecord2(root.mcp_servers) ? root.mcp_servers : {};
   const exists = m.id in servers;
   if (exists && !isForce()) {
-    return { kind: "skip", label, reason: `already in ${path4.basename(file)}` };
+    return { kind: "skip", label, reason: `already in ${path5.basename(file)}` };
   }
   if (exists && isForce()) {
     if (before?.includes("#")) {
@@ -716,9 +867,9 @@ async function buildOpencodeUserMcp(agent, m, label) {
   return { kind: "file", label, path: file, before: before ?? null, after: jsonStringify(root) };
 }
 async function buildProjectMcpAction(entries, opts) {
-  const file = path4.isAbsolute(opts.file) ? opts.file : path4.resolve(opts.cwd ?? process4.cwd(), opts.file);
+  const file = path5.isAbsolute(opts.file) ? opts.file : path5.resolve(opts.cwd ?? process4.cwd(), opts.file);
   const before = await readText(file);
-  const name = path4.basename(file);
+  const name = path5.basename(file);
   const label = `project ${name} (${entries.length} MCP${entries.length === 1 ? "" : "s"})`;
   let root = {};
   if (before && before.trim()) {
@@ -767,11 +918,127 @@ function requiredEnvVars(entries) {
   return [...set];
 }
 
+// src/core/presets.ts
+function deepMergeUnion(base, patch) {
+  if (Array.isArray(patch)) {
+    const out2 = Array.isArray(base) ? [...base] : [];
+    const seen = new Set(out2.map((x) => JSON.stringify(x)));
+    for (const item of patch) {
+      const key = JSON.stringify(item);
+      if (!seen.has(key)) {
+        seen.add(key);
+        out2.push(item);
+      }
+    }
+    return out2;
+  }
+  if (!isRecord(patch)) return patch;
+  const out = isRecord(base) ? { ...base } : {};
+  for (const [k, v] of Object.entries(patch)) out[k] = deepMergeUnion(out[k], v);
+  return out;
+}
+function substitutePlaceholders(text) {
+  const home = homeDir().replace(/\\/g, "/");
+  return text.replaceAll("{{HOME}}", home);
+}
+function sameJson(a, b) {
+  return JSON.stringify(a) === JSON.stringify(b);
+}
+async function readAsset(rel) {
+  const text = await readText(assetPath(rel));
+  return text == null ? null : substitutePlaceholders(text);
+}
+async function buildCopy(file, label) {
+  const after = await readAsset(file.asset);
+  if (after == null) return { kind: "note", level: "warn", label, message: `Preset asset missing: ${file.asset}` };
+  const dest = expandHome(file.dest);
+  const before = await readText(dest);
+  if (before != null && file.keep && !isForce()) {
+    return { kind: "skip", label, reason: `${tildify(dest)} exists (use --force to overwrite)` };
+  }
+  return { kind: "file", label, path: dest, before, after };
+}
+async function buildMergeJson(file, label) {
+  const assetText = await readAsset(file.asset);
+  if (assetText == null) return { kind: "note", level: "warn", label, message: `Preset asset missing: ${file.asset}` };
+  let patch;
+  try {
+    patch = JSON.parse(assetText);
+  } catch (err) {
+    return { kind: "note", level: "warn", label, message: `Preset asset ${file.asset} is not valid JSON: ${err.message}` };
+  }
+  const dest = expandHome(file.dest);
+  const before = await readText(dest);
+  let base = {};
+  if (before && before.trim()) {
+    try {
+      base = JSON.parse(before);
+    } catch {
+      return { kind: "note", level: "warn", label, message: `Could not parse ${tildify(dest)} as JSON; merge it manually.` };
+    }
+  }
+  const merged = deepMergeUnion(base, patch);
+  if (before != null && sameJson(base, merged)) {
+    return { kind: "skip", label, reason: `already merged into ${tildify(dest)}` };
+  }
+  return { kind: "file", label, path: dest, before, after: jsonStringify(merged) };
+}
+async function buildMergeToml(file, label) {
+  const assetText = await readAsset(file.asset);
+  if (assetText == null) return { kind: "note", level: "warn", label, message: `Preset asset missing: ${file.asset}` };
+  let patch;
+  try {
+    patch = parseToml(assetText);
+  } catch (err) {
+    return { kind: "note", level: "warn", label, message: `Preset asset ${file.asset} is not valid TOML: ${err.message}` };
+  }
+  const dest = expandHome(file.dest);
+  const before = await readText(dest);
+  let base = {};
+  if (before && before.trim()) {
+    try {
+      base = parseToml(before);
+    } catch {
+      return { kind: "note", level: "warn", label, message: `Could not parse ${tildify(dest)} as TOML; merge it manually.` };
+    }
+  }
+  const merged = deepMergeUnion(base, patch);
+  if (before != null && sameJson(base, merged)) {
+    return { kind: "skip", label, reason: `already merged into ${tildify(dest)}` };
+  }
+  if (before?.includes("#")) {
+    log.warn(`   rewriting ${tildify(dest)} (TOML comments may be lost)`);
+  }
+  return { kind: "file", label, path: dest, before, after: stringifyToml(merged) };
+}
+async function buildPresetActions(preset, agentIds) {
+  const actions = [];
+  for (const file of preset.files) {
+    if (file.agents && !agentIds.some((id) => appliesToAgent(file.agents, id))) continue;
+    const label = `Preset ${preset.label ?? preset.id} \u2192 ${tildify(expandHome(file.dest))}`;
+    switch (file.op) {
+      case "copy":
+        actions.push(await buildCopy(file, label));
+        break;
+      case "merge-json":
+        actions.push(await buildMergeJson(file, label));
+        break;
+      case "merge-toml":
+        actions.push(await buildMergeToml(file, label));
+        break;
+    }
+  }
+  return actions;
+}
+
 // src/core/skills.ts
 import { promises as fs2 } from "fs";
-import path5 from "path";
+import path6 from "path";
 function isLocalSkill(skill) {
   return skill.source === "local";
+}
+function hasInstaller(skill) {
+  return Boolean(skill.installer);
 }
 function buildSkillAction(agent, skill, scope) {
   const label = `Skill ${skill.skill} \u2192 ${agent.label}`;
@@ -789,8 +1056,26 @@ function buildSkillAction(agent, skill, scope) {
   if (scope === "user") args.push("-g");
   return { kind: "exec", label, cmd: "npx", args, timeout: 18e4 };
 }
+function buildInstallerSkillAction(agents, skill, scope) {
+  const inst = skill.installer;
+  const applicable = agents.filter((a) => a.supports.skills && skillAppliesTo(skill, a.id));
+  const label = `Skill ${skill.skill} \u2192 ${applicable.map((a) => a.label).join(", ") || "no agent"}`;
+  if (!inst) {
+    return { kind: "skip", label, reason: "no installer declared" };
+  }
+  const providers = applicable.map((a) => inst.providers[a.id]).filter((p) => Boolean(p));
+  if (providers.length === 0) {
+    return { kind: "skip", label, reason: "no selected agent supported by this installer" };
+  }
+  const scopeWord = scope === "user" ? "global" : "project";
+  const args = inst.args.map(
+    (a) => a.replaceAll("{provider}", providers.join(",")).replaceAll("{scope}", scopeWord)
+  );
+  const cwd = scope === "user" ? homeDir() : void 0;
+  return { kind: "exec", label, cmd: inst.cmd, args, cwd, timeout: 3e5 };
+}
 function localSkillDir(skill) {
-  return path5.join(assetsDir(), "skills", skill.id);
+  return path6.join(assetsDir(), "skills", skill.id);
 }
 function hasLocalSkill(skill) {
   return pathExists(localSkillDir(skill));
@@ -799,7 +1084,7 @@ async function listFilesRecursive(dir) {
   const out = [];
   const entries = await fs2.readdir(dir, { withFileTypes: true });
   for (const e of entries) {
-    const full = path5.join(dir, e.name);
+    const full = path6.join(dir, e.name);
     if (e.isDirectory()) out.push(...await listFilesRecursive(full));
     else if (e.isFile()) out.push(full);
   }
@@ -828,7 +1113,7 @@ var BINARY_EXTENSIONS = /* @__PURE__ */ new Set([
   ".wasm"
 ]);
 function isBinaryFile(file) {
-  return BINARY_EXTENSIONS.has(path5.extname(file).toLowerCase());
+  return BINARY_EXTENSIONS.has(path6.extname(file).toLowerCase());
 }
 async function buildLocalSkillCopyActions(agent, skill, scope) {
   const label = `Skill ${skill.skill} \u2192 ${agent.label} (local copy)`;
@@ -844,12 +1129,12 @@ async function buildLocalSkillCopyActions(agent, skill, scope) {
     ];
   }
   const destBase = expandHome(scope === "user" ? agent.skills.userDir : agent.skills.projectDir);
-  const destDir = path5.join(destBase, skill.skill);
+  const destDir = path6.join(destBase, skill.skill);
   const files = await listFilesRecursive(srcDir);
   const actions = [];
   for (const file of files) {
-    const rel = path5.relative(srcDir, file);
-    const dest = path5.join(destDir, rel);
+    const rel = path6.relative(srcDir, file);
+    const dest = path6.join(destDir, rel);
     if (isBinaryFile(file)) {
       actions.push({ kind: "copy", label: `copy ${rel} \u2192 ${agent.label}`, src: file, dest });
       continue;
@@ -882,8 +1167,9 @@ function prerequisiteLines(skills) {
 function renderManifest(agent, sel, version) {
   const skills = agent.supports.skills ? sel.skills.filter((s) => skillAppliesTo(s, agent.id)) : [];
   const mcps = agent.supports.mcp ? sel.mcps.filter((m) => mcpAppliesTo(m, agent.id)) : [];
-  const plugins = agent.supports.plugins ? sel.plugins.filter((p) => p.agent === agent.id) : [];
+  const plugins = agent.supports.plugins ? sel.plugins.filter((p) => pluginAppliesTo(p, agent.id)) : [];
   const subagents = agent.supports.subagents ? sel.subagents : [];
+  const presets = sel.presets.filter((p) => appliesToAgent(p.agents, agent.id));
   const lines = [
     `## Provisioned by agent-harness v${version}`,
     "",
@@ -900,6 +1186,7 @@ function renderManifest(agent, sel, version) {
     );
   }
   if (plugins.length) lines.push(`**Plugins** \u2014 ${list(plugins.map((p) => p.id))}`);
+  if (presets.length) lines.push(`**Presets** \u2014 ${list(presets.map((p) => p.id))}`);
   const prereqs = prerequisiteLines(skills);
   const envs = requiredEnvVars(mcps);
   if (prereqs.length || envs.length) {
@@ -931,26 +1218,38 @@ async function buildManifestAction(agent, sel, version) {
 
 // src/core/subagents.ts
 import { promises as fs3 } from "fs";
-import path6 from "path";
-function localSubagentFile(entry) {
-  return path6.join(assetsDir(), "agents", entry.file);
+import path7 from "path";
+function subagentFileFor(entry, agent) {
+  if (!agent.subagents) return void 0;
+  return agent.subagents.format === "toml" ? entry.codex_file : entry.file;
+}
+function localSubagentFile(file) {
+  return path7.join(assetsDir(), "agents", file);
+}
+function hasSubagentFor(entry, agent) {
+  const file = subagentFileFor(entry, agent);
+  return Boolean(file && pathExists(localSubagentFile(file)));
 }
 async function buildSubagentCopyAction(agent, entry, scope) {
   const label = `Agent ${entry.label ?? entry.id} \u2192 ${agent.label}`;
   if (!agent.subagents) {
     return { kind: "skip", label, reason: "agent has no subagents dir" };
   }
-  const srcFile = localSubagentFile(entry);
+  const file = subagentFileFor(entry, agent);
+  if (!file) {
+    return { kind: "skip", label, reason: `no ${agent.subagents.format} variant bundled` };
+  }
+  const srcFile = localSubagentFile(file);
   if (!pathExists(srcFile)) {
     return {
       kind: "note",
       level: "warn",
       label,
-      message: `No local file at assets/agents/${entry.file} \u2014 skipping.`
+      message: `No local file at assets/agents/${file} \u2014 skipping.`
     };
   }
   const destBase = expandHome(scope === "user" ? agent.subagents.userDir : agent.subagents.projectDir);
-  const dest = path6.join(destBase, entry.file);
+  const dest = path7.join(destBase, file);
   const after = await fs3.readFile(srcFile, "utf8");
   return { kind: "file", label, path: dest, before: await readText(dest), after };
 }
@@ -960,11 +1259,11 @@ import process7 from "process";
 import pc4 from "picocolors";
 
 // src/core/templates.ts
-import path7 from "path";
+import path8 from "path";
 import process5 from "process";
 var DEFAULT_GITIGNORE_ENTRIES = [".claude/settings.local.json"];
 function resolveInCwd(rel, cwd) {
-  return path7.isAbsolute(rel) ? rel : path7.resolve(cwd ?? process5.cwd(), rel);
+  return path8.isAbsolute(rel) ? rel : path8.resolve(cwd ?? process5.cwd(), rel);
 }
 async function buildTemplateCopyAction(assetRel, destRel, label, cwd) {
   const dest = resolveInCwd(destRel, cwd);
@@ -991,7 +1290,7 @@ async function buildGitignoreMergeAction(entries, cwd) {
 }
 
 // src/ui/prompts.ts
-import path8 from "path";
+import path9 from "path";
 import process6 from "process";
 import {
   cancel,
@@ -1010,18 +1309,26 @@ function mcpHint(m) {
   return m.agents ? `${m.transport} \xB7 ${m.agents.join("/")} only` : m.transport;
 }
 function skillHint(s, scope) {
-  return s.agents ? `${s.agents.join("/")} \xB7 ${scope}` : scope;
+  const who = s.installer?.providers ? Object.keys(s.installer.providers) : s.agents;
+  return who ? `${who.join("/")} \xB7 ${scope}` : scope;
 }
-function subagentHint(scope) {
-  return `claude only \xB7 ${scope}`;
+function subagentHint(a, scope) {
+  return `${a.codex_file ? "claude/codex" : "claude only"} \xB7 ${scope}`;
+}
+function pluginHint(p) {
+  return p.agents ? p.agents.join("/") : "claude/codex";
+}
+function presetHint(p) {
+  return p.agents ? p.agents.join("/") : "all agents";
 }
 function buildUnifiedGroups(catalog) {
   const groups = {};
   const machine = [];
   for (const m of catalog.mcps) machine.push({ value: `mcp:${m.id}`, label: m.label, hint: mcpHint(m) });
-  for (const p of catalog.plugins) machine.push({ value: `plugin:${p.id}`, label: p.label ?? p.id, hint: p.agent });
+  for (const p of catalog.plugins) machine.push({ value: `plugin:${p.id}`, label: p.label ?? p.id, hint: pluginHint(p) });
   for (const s of catalog.skills) machine.push({ value: `mskill:${s.id}`, label: s.label ?? s.skill, hint: skillHint(s, "global") });
-  for (const a of catalog.subagents) machine.push({ value: `magent:${a.id}`, label: a.label ?? a.id, hint: subagentHint("global") });
+  for (const a of catalog.subagents) machine.push({ value: `magent:${a.id}`, label: a.label ?? a.id, hint: subagentHint(a, "global") });
+  for (const p of catalog.presets) machine.push({ value: `preset:${p.id}`, label: p.label ?? p.id, hint: presetHint(p) });
   if (machine.length) groups["Nesta m\xE1quina (todos os projetos)"] = machine;
   const repo = [
     { value: "doc:claude", label: "CLAUDE.md", hint: "Claude Code" },
@@ -1029,10 +1336,10 @@ function buildUnifiedGroups(catalog) {
     { value: "doc:memory", label: "Skill memory", hint: DEFAULT_MEMORY_DEST }
   ];
   for (const s of catalog.skills) repo.push({ value: `pskill:${s.id}`, label: s.label ?? s.skill, hint: skillHint(s, "repo") });
-  for (const a of catalog.subagents) repo.push({ value: `pagent:${a.id}`, label: a.label ?? a.id, hint: subagentHint("repo") });
+  for (const a of catalog.subagents) repo.push({ value: `pagent:${a.id}`, label: a.label ?? a.id, hint: subagentHint(a, "repo") });
   if (catalog.mcps.length) repo.push({ value: "projmcp", label: ".mcp.json + opencode.json", hint: "as MCPs marcadas acima" });
   repo.push({ value: "gitignore", label: "Merge .gitignore", hint: "agent caches" });
-  groups[`Neste reposit\xF3rio (${path8.basename(process6.cwd())})`] = repo;
+  groups[`Neste reposit\xF3rio (${path9.basename(process6.cwd())})`] = repo;
   return groups;
 }
 function parseUnifiedSelection(catalog, agents, values) {
@@ -1059,6 +1366,7 @@ function parseUnifiedSelection(catalog, agents, values) {
     skills: catalog.skills.filter((s) => ids("mskill:").includes(s.id)),
     plugins: catalog.plugins.filter((p) => ids("plugin:").includes(p.id)),
     subagents: catalog.subagents.filter((a) => ids("magent:").includes(a.id)),
+    presets: catalog.presets.filter((p) => ids("preset:").includes(p.id)),
     repo
   };
 }
@@ -1066,7 +1374,8 @@ function unifiedSummary(sel) {
   const names = (arr) => arr.length ? arr.map((x) => x.id).join(", ") : pc3.dim("none");
   const lines = [
     `Agentes:  ${sel.agents.map((a) => a.label).join(", ")}`,
-    `M\xE1quina:  MCPs ${names(sel.mcps)} \xB7 skills ${names(sel.skills)} \xB7 plugins ${names(sel.plugins)} \xB7 agentes custom ${names(sel.subagents)}`
+    `M\xE1quina:  MCPs ${names(sel.mcps)} \xB7 skills ${names(sel.skills)} \xB7 plugins ${names(sel.plugins)}`,
+    `          agentes custom ${names(sel.subagents)} \xB7 presets ${names(sel.presets)}`
   ];
   if (sel.repo) {
     const docs = [sel.repo.withClaudeMd && "CLAUDE.md", sel.repo.withAgentsMd && "AGENTS.md", sel.repo.withMemory && "memory"].filter(Boolean).join(", ") || pc3.dim("none");
@@ -1118,7 +1427,7 @@ async function promptScaffoldSelection(catalog) {
       { value: "agents-md", label: "AGENTS.md", hint: "Codex / OpenCode instructions" },
       { value: "memory", label: "Skill memory file", hint: DEFAULT_MEMORY_DEST },
       { value: "skills", label: "Skills", hint: "install into the repo (project-scoped)" },
-      { value: "agents", label: "Custom agents", hint: "custom Claude Code subagents (repo-scoped)" },
+      { value: "agents", label: "Custom agents", hint: "custom Claude Code / Codex subagents (repo-scoped)" },
       { value: "mcp", label: "Project .mcp.json", hint: "Claude project MCPs" },
       { value: "opencode", label: "Project opencode.json", hint: "OpenCode project MCPs" },
       { value: "gitignore", label: "Merge .gitignore", hint: "agent caches" }
@@ -1156,7 +1465,7 @@ async function promptScaffoldSelection(catalog) {
   if (want("agents") && catalog.subagents.length) {
     const picked = await multiselect({
       message: "Which custom agents to install into the repo?",
-      options: catalog.subagents.map((a) => ({ value: a.id, label: a.label ?? a.id, hint: "claude only" })),
+      options: catalog.subagents.map((a) => ({ value: a.id, label: a.label ?? a.id, hint: subagentHint(a, "repo") })),
       required: false
     });
     if (isCancel(picked)) return abort();
@@ -1233,6 +1542,10 @@ function isEmptyPlan(p) {
 async function skillActions(skills) {
   const actions = [];
   for (const skill of skills) {
+    if (hasInstaller(skill)) {
+      actions.push(buildInstallerSkillAction(AGENTS, skill, "project"));
+      continue;
+    }
     for (const agent of AGENTS) {
       if (!agent.supports.skills || !skillAppliesTo(skill, agent.id)) continue;
       if (isLocalSkill(skill)) {
@@ -1248,7 +1561,7 @@ async function subagentActions(subagents) {
   const actions = [];
   for (const entry of subagents) {
     for (const agent of AGENTS) {
-      if (!agent.supports.subagents) continue;
+      if (!agent.supports.subagents || !hasSubagentFor(entry, agent)) continue;
       actions.push(await buildSubagentCopyAction(agent, entry, "project"));
     }
   }
@@ -1323,7 +1636,8 @@ function selectionFromFlags(catalog, opts) {
     mcps: pick(catalog.mcps, opts.mcp),
     skills: pick(catalog.skills, opts.skill),
     plugins: pick(catalog.plugins, opts.plugin),
-    subagents: pick(catalog.subagents, opts.subagent)
+    subagents: pick(catalog.subagents, opts.subagent),
+    presets: pick(catalog.presets, opts.preset)
   };
 }
 function uniqueAgents(ids) {
@@ -1340,7 +1654,7 @@ function uniqueAgents(ids) {
 }
 function isInteractive2(opts) {
   if (opts.yes) return false;
-  const explicit = opts.all || opts.agent.length > 0 || opts.mcp.length > 0 || opts.skill.length > 0 || opts.plugin.length > 0 || opts.subagent.length > 0;
+  const explicit = opts.all || opts.agent.length > 0 || opts.mcp.length > 0 || opts.skill.length > 0 || opts.plugin.length > 0 || opts.subagent.length > 0 || opts.preset.length > 0;
   if (explicit) return false;
   return Boolean(process8.stdout.isTTY && process8.stdin.isTTY);
 }
@@ -1360,11 +1674,13 @@ async function runInitCommand(opts) {
   log.info(
     `${isDryRun() ? pc5.yellow("Dry run \u2014 ") : ""}Configuring ${selection.agents.map((a) => pc5.bold(a.label)).join(", ")}`
   );
+  await runPresets(selection);
   for (const agent of selection.agents) {
     log.plain("");
     log.step(pc5.bold(agent.label));
     await configureAgent(agent, selection, opts);
   }
+  await runInstallerSkills(selection);
   if (selection.repo) {
     const repoActions = await buildScaffoldActions(catalog, selection.repo);
     if (repoActions.length) {
@@ -1390,6 +1706,7 @@ async function configureAgent(agent, sel, opts) {
   }
   if (agent.supports.skills) {
     for (const s of sel.skills.filter((skill) => skillAppliesTo(skill, agent.id))) {
+      if (hasInstaller(s)) continue;
       if (isLocalSkill(s)) {
         await runActions(await buildLocalSkillCopyActions(agent, s, "user"));
         continue;
@@ -1403,17 +1720,17 @@ async function configureAgent(agent, sel, opts) {
   } else if (sel.skills.length) {
     log.plain(`   ${pc5.dim("\xB7 skip skills \u2014 unsupported")}`);
   }
+  const pluginsHere = sel.plugins.filter((p) => pluginAppliesTo(p, agent.id));
   if (agent.supports.plugins) {
-    const forThisAgent = sel.plugins.filter((p) => p.agent === agent.id);
-    for (const p of forThisAgent) {
-      const actions = buildPluginActions(agent, p);
+    for (const p of pluginsHere) {
+      const actions = await buildPluginActions(agent, p);
       if (actions.length === 0) {
         await runAction(await buildPluginSettingsFallbackAction(p));
       } else {
         await runActions(actions);
       }
     }
-  } else if (sel.plugins.some((p) => p.agent === agent.id)) {
+  } else if (pluginsHere.length) {
     log.plain(`   ${pc5.dim("\xB7 skip plugins \u2014 unsupported")}`);
   }
   if (agent.supports.subagents) {
@@ -1425,6 +1742,25 @@ async function configureAgent(agent, sel, opts) {
   }
   if (opts.manifest) {
     await runAction(await buildManifestAction(agent, sel, opts.version));
+  }
+}
+async function runInstallerSkills(sel) {
+  const installers = sel.skills.filter(hasInstaller);
+  if (!installers.length) return;
+  log.plain("");
+  log.step(pc5.bold("Skills com instalador pr\xF3prio"));
+  for (const s of installers) {
+    await runAction(buildInstallerSkillAction(sel.agents, s, "user"));
+  }
+}
+async function runPresets(sel) {
+  const agentIds = sel.agents.map((a) => a.id);
+  const applicable = sel.presets.filter((p) => presetAppliesTo(p, agentIds));
+  if (!applicable.length) return;
+  log.plain("");
+  log.step(pc5.bold("Presets (settings / config)"));
+  for (const p of applicable) {
+    await runActions(await buildPresetActions(p, agentIds));
   }
 }
 function warnPlaceholders(sel) {
@@ -1455,10 +1791,13 @@ function printAuthBlock(sel) {
     log.plain(`  ${a.label.padEnd(width)}  \u2192  ${pc5.cyan(a.login.cmd)}${note2}`);
   }
   log.plain("");
-  log.plain(pc5.dim("  MCPs with OAuth (Notion, Google\u2026) authenticate on first tool use."));
+  log.plain(pc5.dim("  MCPs with OAuth (Figma, Notion, Google\u2026) authenticate on first tool use."));
   const envs = requiredEnvVars([...sel.mcps, ...sel.repo?.mcps ?? []]);
   if (envs.length) {
     log.plain(pc5.dim(`  MCPs needing API keys \u2014 export in your shell/.env: ${envs.join(", ")}`));
+  }
+  if (sel.skills.some((s) => s.id === "impeccable")) {
+    log.plain(pc5.dim("  Impeccable: type /impeccable init inside the agent chat to set up design context."));
   }
   log.plain("");
 }
@@ -1468,8 +1807,8 @@ function collect(value, previous) {
   return previous.concat([value]);
 }
 var program = new Command();
-program.name("agent-harness").description("Dotfiles-for-AI-agents bootstrapper \u2014 configure MCPs, skills, and plugins across Claude Code, Codex, and OpenCode.").version(package_default.version);
-program.command("init", { isDefault: true }).description("Configure agents on this machine (user-scope MCPs, skills, plugins), then print the login block.").option("-a, --agent <id>", "target agent (repeatable)", collect, []).option("--mcp <id>", "MCP to install (repeatable)", collect, []).option("--skill <id>", "skill to install (repeatable)", collect, []).option("--plugin <id>", "plugin to install (repeatable)", collect, []).option("--subagent <id>", "custom agent to install (repeatable)", collect, []).option("--all", "select every catalog item", false).option("--no-manifest", "do not record what was installed in the agent's global instructions file").option("-y, --yes", "assume defaults, no prompts (CI)", false).option("--dry-run", "show actions without writing anything", false).option("--force", "overwrite existing entries instead of skipping", false).action(async (opts) => {
+program.name("agent-harness").description("Dotfiles-for-AI-agents bootstrapper \u2014 configure MCPs, skills, plugins, custom agents and settings presets across Claude Code, Codex, and OpenCode.").version(package_default.version);
+program.command("init", { isDefault: true }).description("Configure agents on this machine (user-scope MCPs, skills, plugins, custom agents, presets), then print the login block.").option("-a, --agent <id>", "target agent (repeatable)", collect, []).option("--mcp <id>", "MCP to install (repeatable)", collect, []).option("--skill <id>", "skill to install (repeatable)", collect, []).option("--plugin <id>", "plugin to install (repeatable)", collect, []).option("--subagent <id>", "custom agent to install (repeatable)", collect, []).option("--preset <id>", "settings/config preset to apply (repeatable)", collect, []).option("--all", "select every catalog item", false).option("--no-manifest", "do not record what was installed in the agent's global instructions file").option("-y, --yes", "assume defaults, no prompts (CI)", false).option("--dry-run", "show actions without writing anything", false).option("--force", "overwrite existing entries instead of skipping", false).action(async (opts) => {
   setRunContext({ dryRun: !!opts.dryRun, force: !!opts.force, yes: !!opts.yes });
   await runInitCommand({
     agent: opts.agent,
@@ -1477,6 +1816,7 @@ program.command("init", { isDefault: true }).description("Configure agents on th
     skill: opts.skill,
     plugin: opts.plugin,
     subagent: opts.subagent,
+    preset: opts.preset,
     all: !!opts.all,
     manifest: opts.manifest !== false,
     yes: !!opts.yes,

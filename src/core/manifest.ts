@@ -11,7 +11,16 @@
  */
 import type { Action } from './actions';
 import type { AgentInfo } from './agents';
-import { type McpEntry, type SkillEntry, mcpAppliesTo, skillAppliesTo } from './catalog';
+import {
+  type McpEntry,
+  type PluginEntry,
+  type PresetEntry,
+  type SkillEntry,
+  appliesToAgent,
+  mcpAppliesTo,
+  pluginAppliesTo,
+  skillAppliesTo,
+} from './catalog';
 import { MANIFEST_BEGIN, MANIFEST_END, mergeManagedBlock, readText, tildify } from './fsx';
 import { requiredEnvVars } from './mcp';
 
@@ -19,8 +28,9 @@ import { requiredEnvVars } from './mcp';
 export interface ManifestInput {
   mcps: McpEntry[];
   skills: SkillEntry[];
-  plugins: { id: string; agent: string }[];
+  plugins: PluginEntry[];
   subagents: { id: string }[];
+  presets: PresetEntry[];
 }
 
 const list = (names: string[]): string => [...names].sort().join(', ');
@@ -44,8 +54,9 @@ function prerequisiteLines(skills: SkillEntry[]): string[] {
 export function renderManifest(agent: AgentInfo, sel: ManifestInput, version: string): string {
   const skills = agent.supports.skills ? sel.skills.filter((s) => skillAppliesTo(s, agent.id)) : [];
   const mcps = agent.supports.mcp ? sel.mcps.filter((m) => mcpAppliesTo(m, agent.id)) : [];
-  const plugins = agent.supports.plugins ? sel.plugins.filter((p) => p.agent === agent.id) : [];
+  const plugins = agent.supports.plugins ? sel.plugins.filter((p) => pluginAppliesTo(p, agent.id)) : [];
   const subagents = agent.supports.subagents ? sel.subagents : [];
+  const presets = sel.presets.filter((p) => appliesToAgent(p.agents, agent.id));
 
   const lines: string[] = [
     `## Provisioned by agent-harness v${version}`,
@@ -64,6 +75,7 @@ export function renderManifest(agent: AgentInfo, sel: ManifestInput, version: st
     );
   }
   if (plugins.length) lines.push(`**Plugins** — ${list(plugins.map((p) => p.id))}`);
+  if (presets.length) lines.push(`**Presets** — ${list(presets.map((p) => p.id))}`);
 
   const prereqs = prerequisiteLines(skills);
   const envs = requiredEnvVars(mcps);

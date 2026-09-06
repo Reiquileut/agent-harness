@@ -16,9 +16,17 @@ export type AgentId = 'claude-code' | 'codex' | 'opencode';
 
 /** How a given agent's USER-scope MCP server is registered. */
 export type McpUserMethod =
-  | 'claude-cli' // delegate to `claude mcp add-json ... --scope user`
+  | 'claude-cli' // delegate to `claude mcp add ... --scope user`
   | 'codex-toml' // merge ~/.codex/config.toml [mcp_servers.<id>]
   | 'opencode-json'; // merge ~/.config/opencode/opencode.json mcp.<id>
+
+/** How marketplaces + plugins are registered. */
+export type PluginMethod =
+  | 'claude-cli' // `claude plugin marketplace add` + `claude plugin install`
+  | 'codex-toml'; // merge ~/.codex/config.toml [marketplaces.<name>] + [plugins."<p>@<name>"]
+
+/** File format of a custom subagent definition. */
+export type SubagentFormat = 'md' | 'toml';
 
 export interface AgentInfo {
   id: AgentId;
@@ -39,6 +47,8 @@ export interface AgentInfo {
   supports: { mcp: boolean; skills: boolean; plugins: boolean; subagents: boolean };
   /** How user-scope MCP is written. */
   mcpUserMethod: McpUserMethod;
+  /** How plugins are written (absent = no plugin system). */
+  pluginMethod?: PluginMethod;
   /** Path of the user-scope MCP config file (for file-merge methods). */
   userMcpFile?: string;
   /** Project-scope MCP config file written by `scaffold`. */
@@ -53,10 +63,11 @@ export interface AgentInfo {
    */
   skills: { userDir: string; projectDir: string };
   /**
-   * Custom subagent directories this agent reads (Claude Code only, today).
-   * Absent when the agent has no equivalent concept.
+   * Custom subagent directories this agent reads, plus the file format it
+   * expects (Claude: Markdown + frontmatter; Codex: TOML). Absent when the agent
+   * has no equivalent concept (OpenCode).
    */
-  subagents?: { userDir: string; projectDir: string };
+  subagents?: { userDir: string; projectDir: string; format: SubagentFormat };
 }
 
 export const AGENTS: AgentInfo[] = [
@@ -71,10 +82,11 @@ export const AGENTS: AgentInfo[] = [
     detectFiles: ['~/.claude.json'],
     supports: { mcp: true, skills: true, plugins: true, subagents: true },
     mcpUserMethod: 'claude-cli',
+    pluginMethod: 'claude-cli',
     projectMcpFile: '.mcp.json',
     globalInstructionsFile: '~/.claude/CLAUDE.md',
     skills: { userDir: '~/.claude/skills', projectDir: '.claude/skills' },
-    subagents: { userDir: '~/.claude/agents', projectDir: '.claude/agents' },
+    subagents: { userDir: '~/.claude/agents', projectDir: '.claude/agents', format: 'md' },
   },
   {
     id: 'codex',
@@ -85,12 +97,15 @@ export const AGENTS: AgentInfo[] = [
     bin: 'codex',
     detectDirs: ['~/.codex'],
     detectFiles: ['~/.codex/config.toml'],
-    supports: { mcp: true, skills: true, plugins: false, subagents: false },
+    supports: { mcp: true, skills: true, plugins: true, subagents: true },
     mcpUserMethod: 'codex-toml',
+    pluginMethod: 'codex-toml',
     userMcpFile: '~/.codex/config.toml',
     globalInstructionsFile: '~/.codex/AGENTS.md',
     // Codex reads ~/.agents/skills (user) and .agents/skills (repo) per current docs.
     skills: { userDir: '~/.agents/skills', projectDir: '.agents/skills' },
+    // Codex custom agents are TOML files under ~/.codex/agents (user) / .codex/agents (repo).
+    subagents: { userDir: '~/.codex/agents', projectDir: '.codex/agents', format: 'toml' },
   },
   {
     id: 'opencode',

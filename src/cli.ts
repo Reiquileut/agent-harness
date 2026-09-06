@@ -14,17 +14,18 @@ const program = new Command();
 
 program
   .name('agent-harness')
-  .description('Dotfiles-for-AI-agents bootstrapper — configure MCPs, skills, and plugins across Claude Code, Codex, and OpenCode.')
+  .description('Dotfiles-for-AI-agents bootstrapper — configure MCPs, skills, plugins, custom agents and settings presets across Claude Code, Codex, and OpenCode.')
   .version(pkg.version);
 
 program
   .command('init', { isDefault: true })
-  .description('Configure agents on this machine (user-scope MCPs, skills, plugins), then print the login block.')
+  .description('Configure agents on this machine (user-scope MCPs, skills, plugins, custom agents, presets), then print the login block.')
   .option('-a, --agent <id>', 'target agent (repeatable)', collect, [])
   .option('--mcp <id>', 'MCP to install (repeatable)', collect, [])
   .option('--skill <id>', 'skill to install (repeatable)', collect, [])
   .option('--plugin <id>', 'plugin to install (repeatable)', collect, [])
   .option('--subagent <id>', 'custom agent to install (repeatable)', collect, [])
+  .option('--preset <id>', 'settings/config preset to apply (repeatable)', collect, [])
   .option('--all', 'select every catalog item', false)
   .option('--no-manifest', "do not record what was installed in the agent's global instructions file")
   .option('-y, --yes', 'assume defaults, no prompts (CI)', false)
@@ -38,6 +39,7 @@ program
       skill: opts.skill,
       plugin: opts.plugin,
       subagent: opts.subagent,
+      preset: opts.preset,
       all: !!opts.all,
       manifest: opts.manifest !== false,
       yes: !!opts.yes,

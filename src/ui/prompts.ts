@@ -2,10 +2,11 @@
  * prompts — the interactive clack flow.
  *
  * The unified `init` menu has two groups — "Nesta máquina" (user-scope MCPs,
- * global skills, plugins) and "Neste repositório" (CLAUDE.md, AGENTS.md, project
- * skills, project .mcp.json). Values are namespaced (`mcp:`, `mskill:`,
- * `plugin:`, `doc:*`, `pskill:`, `projmcp`, `gitignore`) so nothing collides when
- * an MCP and a skill share an id, or a skill appears at both scopes.
+ * plugins, global skills, custom agents, presets) and "Neste repositório"
+ * (CLAUDE.md, AGENTS.md, project skills, project .mcp.json). Values are
+ * namespaced (`mcp:`, `plugin:`, `mskill:`, `magent:`, `preset:`, `doc:*`,
+ * `pskill:`, `pagent:`, `projmcp`, `gitignore`) so nothing collides when an
+ * MCP and a skill share an id, or a skill appears at both scopes.
  */
 import path from 'node:path';
 import process from 'node:process';
@@ -22,7 +23,14 @@ import pc from 'picocolors';
 import type { Selection } from '../commands/init';
 import { DEFAULT_MEMORY_DEST, type ScaffoldPlan } from '../commands/scaffold';
 import { type AgentInfo, detectInstalledAgentIds, getAgent } from '../core/agents';
-import type { CatalogData, McpEntry, SkillEntry, SubagentEntry } from '../core/catalog';
+import type {
+  CatalogData,
+  McpEntry,
+  PluginEntry,
+  PresetEntry,
+  SkillEntry,
+  SubagentEntry,
+} from '../core/catalog';
 
 function toAgents(ids: string[]): AgentInfo[] {
   return ids.map(getAgent).filter((a): a is AgentInfo => Boolean(a));
@@ -35,11 +43,20 @@ function mcpHint(m: McpEntry): string {
 type GroupOption = { value: string; label: string; hint?: string };
 
 function skillHint(s: SkillEntry, scope: string): string {
-  return s.agents ? `${s.agents.join('/')} · ${scope}` : scope;
+  const who = s.installer?.providers ? Object.keys(s.installer.providers) : s.agents;
+  return who ? `${who.join('/')} · ${scope}` : scope;
 }
 
-function subagentHint(scope: string): string {
-  return `claude only · ${scope}`;
+function subagentHint(a: SubagentEntry, scope: string): string {
+  return `${a.codex_file ? 'claude/codex' : 'claude only'} · ${scope}`;
+}
+
+function pluginHint(p: PluginEntry): string {
+  return p.agents ? p.agents.join('/') : 'claude/codex';
+}
+
+function presetHint(p: PresetEntry): string {
+  return p.agents ? p.agents.join('/') : 'all agents';
 }
 
 /** Two-group option set: "Nesta máquina" (global) and "Neste repositório". */
@@ -48,9 +65,10 @@ function buildUnifiedGroups(catalog: CatalogData): Record<string, GroupOption[]>
 
   const machine: GroupOption[] = [];
   for (const m of catalog.mcps) machine.push({ value: `mcp:${m.id}`, label: m.label, hint: mcpHint(m) });
-  for (const p of catalog.plugins) machine.push({ value: `plugin:${p.id}`, label: p.label ?? p.id, hint: p.agent });
+  for (const p of catalog.plugins) machine.push({ value: `plugin:${p.id}`, label: p.label ?? p.id, hint: pluginHint(p) });
   for (const s of catalog.skills) machine.push({ value: `mskill:${s.id}`, label: s.label ?? s.skill, hint: skillHint(s, 'global') });
-  for (const a of catalog.subagents) machine.push({ value: `magent:${a.id}`, label: a.label ?? a.id, hint: subagentHint('global') });
+  for (const a of catalog.subagents) machine.push({ value: `magent:${a.id}`, label: a.label ?? a.id, hint: subagentHint(a, 'global') });
+  for (const p of catalog.presets) machine.push({ value: `preset:${p.id}`, label: p.label ?? p.id, hint: presetHint(p) });
   if (machine.length) groups['Nesta máquina (todos os projetos)'] = machine;
 
   const repo: GroupOption[] = [
@@ -59,7 +77,7 @@ function buildUnifiedGroups(catalog: CatalogData): Record<string, GroupOption[]>
     { value: 'doc:memory', label: 'Skill memory', hint: DEFAULT_MEMORY_DEST },
   ];
   for (const s of catalog.skills) repo.push({ value: `pskill:${s.id}`, label: s.label ?? s.skill, hint: skillHint(s, 'repo') });
-  for (const a of catalog.subagents) repo.push({ value: `pagent:${a.id}`, label: a.label ?? a.id, hint: subagentHint('repo') });
+  for (const a of catalog.subagents) repo.push({ value: `pagent:${a.id}`, label: a.label ?? a.id, hint: subagentHint(a, 'repo') });
   if (catalog.mcps.length) repo.push({ value: 'projmcp', label: '.mcp.json + opencode.json', hint: 'as MCPs marcadas acima' });
   repo.push({ value: 'gitignore', label: 'Merge .gitignore', hint: 'agent caches' });
   groups[`Neste repositório (${path.basename(process.cwd())})`] = repo;
@@ -108,6 +126,7 @@ export function parseUnifiedSelection(
     skills: catalog.skills.filter((s) => ids('mskill:').includes(s.id)),
     plugins: catalog.plugins.filter((p) => ids('plugin:').includes(p.id)),
     subagents: catalog.subagents.filter((a) => ids('magent:').includes(a.id)),
+    presets: catalog.presets.filter((p) => ids('preset:').includes(p.id)),
     repo,
   };
 }
@@ -116,7 +135,8 @@ function unifiedSummary(sel: Selection): string {
   const names = (arr: Array<{ id: string }>) => (arr.length ? arr.map((x) => x.id).join(', ') : pc.dim('none'));
   const lines = [
     `Agentes:  ${sel.agents.map((a) => a.label).join(', ')}`,
-    `Máquina:  MCPs ${names(sel.mcps)} · skills ${names(sel.skills)} · plugins ${names(sel.plugins)} · agentes custom ${names(sel.subagents)}`,
+    `Máquina:  MCPs ${names(sel.mcps)} · skills ${names(sel.skills)} · plugins ${names(sel.plugins)}`,
+    `          agentes custom ${names(sel.subagents)} · presets ${names(sel.presets)}`,
   ];
   if (sel.repo) {
     const docs =
@@ -178,7 +198,7 @@ export async function promptScaffoldSelection(catalog: CatalogData): Promise<Sca
       { value: 'agents-md', label: 'AGENTS.md', hint: 'Codex / OpenCode instructions' },
       { value: 'memory', label: 'Skill memory file', hint: DEFAULT_MEMORY_DEST },
       { value: 'skills', label: 'Skills', hint: 'install into the repo (project-scoped)' },
-      { value: 'agents', label: 'Custom agents', hint: 'custom Claude Code subagents (repo-scoped)' },
+      { value: 'agents', label: 'Custom agents', hint: 'custom Claude Code / Codex subagents (repo-scoped)' },
       { value: 'mcp', label: 'Project .mcp.json', hint: 'Claude project MCPs' },
       { value: 'opencode', label: 'Project opencode.json', hint: 'OpenCode project MCPs' },
       { value: 'gitignore', label: 'Merge .gitignore', hint: 'agent caches' },
@@ -220,7 +240,7 @@ export async function promptScaffoldSelection(catalog: CatalogData): Promise<Sca
   if (want('agents') && catalog.subagents.length) {
     const picked = await multiselect({
       message: 'Which custom agents to install into the repo?',
-      options: catalog.subagents.map((a) => ({ value: a.id, label: a.label ?? a.id, hint: 'claude only' })),
+      options: catalog.subagents.map((a) => ({ value: a.id, label: a.label ?? a.id, hint: subagentHint(a, 'repo') })),
       required: false,
     });
     if (isCancel(picked)) return abort();

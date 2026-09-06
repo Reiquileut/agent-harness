@@ -1,0 +1,42 @@
+# Codex defaults merged into ~/.codex/config.toml by `agent-harness init --preset codex-config`.
+# Merge semantics: keys here win over existing scalars; tables merge; nothing else is touched.
+# Machine-specific keys (projects.*, notify, hooks.state, mcp_servers, marketplaces, plugins)
+# are intentionally absent — MCPs and plugins come from their own catalog sections.
+
+model = "gpt-6-astra"
+model_reasoning_effort = "xhigh"
+personality = "pragmatic"
+approval_policy = "on-request"
+approvals_reviewer = "guardian_subagent"
+sandbox_mode = "workspace-write"
+service_tier = "default"
+
+[windows]
+sandbox = "unelevated"
+
+[features]
+multi_agent = true
+memories = true
+js_repl = false
+
+[sandbox_workspace_write]
+network_access = true
+
+[shell_environment_policy]
+inherit = "core"
+
+[shell_environment_policy.set]
+CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS = "1"
+
+[desktop]
+git-show-sidebar-pr-icons = true
+keepRemoteControlAwakeWhilePluggedIn = true
+show-context-window-usage = true
+followUpQueueMode = "queue"
+
+[desktop.open-in-target-preferences]
+global = "cursor"
+
+[computer_use.windows.always_allowed_app_ids]
+Chrome = true
+"chrome.exe" = true

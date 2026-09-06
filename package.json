@@ -1,7 +1,7 @@
 {
   "name": "@r2t/agent-harness",
-  "version": "1.3.0",
-  "description": "Dotfiles-for-AI-agents bootstrapper: one command to configure MCPs, skills, and plugins across Claude Code, Codex, and OpenCode.",
+  "version": "1.4.0",
+  "description": "Dotfiles-for-AI-agents bootstrapper: one command to configure MCPs, skills, plugins, custom agents and settings presets across Claude Code, Codex, and OpenCode.",
   "type": "module",
   "bin": {
     "agent-harness": "dist/cli.js"

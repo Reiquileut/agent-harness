@@ -18,13 +18,76 @@
       "env": []
     },
     {
-      "id": "pencil",
-      "label": "Pencil — .pen design editor (Windows, Claude only)",
+      "id": "playwright",
+      "label": "Playwright MCP — browser automation (Claude gets it via the official plugin)",
       "transport": "stdio",
-      "command": "${LOCALAPPDATA}\\Programs\\Pencil\\resources\\app.asar.unpacked\\out\\mcp-server-windows-x64.exe",
+      "command": "npx",
+      "args": ["@playwright/mcp@latest"],
+      "env": [],
+      "agents": ["codex", "opencode"]
+    },
+    {
+      "id": "context7",
+      "label": "Context7 — live library docs (Claude gets it via the official plugin)",
+      "transport": "stdio",
+      "command": "npx",
+      "args": ["-y", "@upstash/context7-mcp"],
+      "env": [],
+      "agents": ["codex", "opencode"]
+    },
+    {
+      "id": "upstash-context-7-mcp",
+      "label": "Context7 via Smithery (HTTP) — remote alternative",
+      "transport": "http",
+      "url": "https://server.smithery.ai/@upstash/context7-mcp/mcp",
+      "headers": {},
+      "env": [],
+      "agents": ["codex"]
+    },
+    {
+      "id": "taskmaster",
+      "label": "Task Master MCP — task orchestration (Claude gets it via plugin)",
+      "transport": "stdio",
+      "command": "npx",
+      "args": ["-y", "--package=task-master-ai", "task-master-mcp"],
+      "env": [],
+      "agents": ["codex"],
+      "overrides": {
+        "codex": {
+          "extra": {
+            "startup_timeout_sec": 120,
+            "tools": { "set_task_status": { "approval_mode": "approve" } }
+          }
+        }
+      }
+    },
+    {
+      "id": "lottiefiles-creator",
+      "label": "LottieFiles Creator — Lottie animations",
+      "transport": "stdio",
+      "command": "npx",
+      "args": ["-y", "@lottiefiles/creator-mcp@latest"],
+      "env": []
+    },
+    {
+      "id": "n8n-mcp",
+      "label": "n8n-mcp — build, validate & manage n8n workflows",
+      "transport": "stdio",
+      "command": "npx",
+      "args": ["-y", "n8n-mcp@latest"],
+      "env": ["N8N_API_URL", "N8N_API_KEY"]
+    },
+    {
+      "id": "pencil",
+      "label": "Pencil — .pen design editor (Windows desktop app)",
+      "transport": "stdio",
+      "command": "C:\\Program Files\\Pencil\\resources\\app.asar.unpacked\\out\\mcp-server-windows-x64.exe",
       "args": ["--app", "desktop", "--agent", "claudeCodeCLI"],
       "env": [],
-      "agents": ["claude-code"]
+      "overrides": {
+        "codex": { "args": ["--app", "desktop", "--agent", "codexCLI"] },
+        "opencode": { "args": ["--app", "desktop", "--agent", "openCodeCLI"] }
+      }
     },
     {
       "id": "stitch",
@@ -34,14 +97,6 @@
       "headers": { "X-Goog-Api-Key": "${STITCH_API_KEY}" },
       "env": ["STITCH_API_KEY"],
       "agents": ["claude-code"]
-    },
-    {
-      "id": "n8n-mcp",
-      "label": "n8n-mcp — build, validate & manage n8n workflows",
-      "transport": "stdio",
-      "command": "npx",
-      "args": ["-y", "n8n-mcp@latest"],
-      "env": ["N8N_API_URL", "N8N_API_KEY"]
     }
   ],
   "skills": [
@@ -59,10 +114,14 @@
     },
     {
       "id": "impeccable",
-      "label": "Impeccable — frontend design/UX system (v3.5.0, Apache-2.0)",
-      "source": "local",
+      "label": "Impeccable — frontend design/UX system (npm, installs hooks + agents)",
+      "source": "npm:impeccable",
       "skill": "impeccable",
-      "agents": ["claude-code"]
+      "installer": {
+        "cmd": "npx",
+        "args": ["--yes", "impeccable@latest", "install", "--scope={scope}", "--providers={provider}", "-y"],
+        "providers": { "claude-code": "claude", "codex": "codex" }
+      }
     },
     {
       "id": "find-skills",
@@ -138,20 +197,21 @@
   "subagents": [
     {
       "id": "documentation-auditor",
-      "label": "Documentation Auditor — audits docs vs codebase (claude only)",
-      "file": "documentation-auditor.md"
+      "label": "Documentation Auditor — audits docs vs codebase",
+      "file": "documentation-auditor.md",
+      "codex_file": "documentation-auditor.toml"
     },
     {
       "id": "impeccable-manual-edit-applier",
-      "label": "Impeccable Manual Edit Applier — applies leased Impeccable copy-edit batches (claude only)",
-      "file": "impeccable-manual-edit-applier.md"
+      "label": "Impeccable Manual Edit Applier — applies leased Impeccable copy-edit batches",
+      "file": "impeccable-manual-edit-applier.md",
+      "codex_file": "impeccable-manual-edit-applier.toml"
     }
   ],
   "plugins": [
     {
       "id": "claude-official",
       "label": "Claude official: context7, github, frontend-design, playwright",
-      "agent": "claude-code",
       "marketplace": "anthropics/claude-plugins-official",
       "name": "claude-plugins-official",
       "install": ["context7", "github", "frontend-design", "playwright"]
@@ -159,7 +219,7 @@
     {
       "id": "n8n-mcp-skills",
       "label": "n8n-mcp skills pack",
-      "agent": "claude-code",
+      "agents": ["claude-code"],
       "marketplace": "czlonkowski/n8n-skills",
       "name": "n8n-mcp-skills",
       "install": ["n8n-mcp-skills"]
@@ -167,7 +227,6 @@
     {
       "id": "openai-codex",
       "label": "OpenAI Codex plugin (codex rescue/setup)",
-      "agent": "claude-code",
       "marketplace": "openai/codex-plugin-cc",
       "name": "openai-codex",
       "install": ["codex"]
@@ -175,7 +234,6 @@
     {
       "id": "taskmaster",
       "label": "Task Master — task orchestration",
-      "agent": "claude-code",
       "marketplace": "eyaltoledano/claude-task-master",
       "name": "taskmaster",
       "install": ["taskmaster"]
@@ -183,7 +241,6 @@
     {
       "id": "obsidian-skills",
       "label": "Obsidian skills (kepano)",
-      "agent": "claude-code",
       "marketplace": "kepano/obsidian-skills",
       "name": "obsidian-skills",
       "install": ["obsidian"]
@@ -191,10 +248,72 @@
     {
       "id": "claude-code-warp",
       "label": "Warp for Claude Code",
-      "agent": "claude-code",
+      "agents": ["claude-code"],
       "marketplace": "warpdotdev/claude-code-warp",
       "name": "claude-code-warp",
       "install": ["warp"]
+    },
+    {
+      "id": "codex-openai-curated",
+      "label": "Codex curated connectors: github, gmail, calendar, drive, notion, atlassian, cloudflare, web apps, security",
+      "agents": ["codex"],
+      "builtin": true,
+      "name": "openai-curated",
+      "install": [
+        "github",
+        "gmail",
+        "google-calendar",
+        "google-drive",
+        "notion",
+        "atlassian-rovo",
+        "cloudflare",
+        "build-web-apps",
+        "codex-security"
+      ]
+    },
+    {
+      "id": "codex-openai-bundled",
+      "label": "Codex bundled: computer-use, chrome, browser, sites, visualize, app tools",
+      "agents": ["codex"],
+      "builtin": true,
+      "name": "openai-bundled",
+      "install": ["computer-use", "chrome", "browser", "sites", "visualize", "codex-app-tools"]
+    },
+    {
+      "id": "codex-openai-primary-runtime",
+      "label": "Codex runtime: documents, spreadsheets, presentations, pdf, template-creator",
+      "agents": ["codex"],
+      "builtin": true,
+      "name": "openai-primary-runtime",
+      "install": ["documents", "spreadsheets", "presentations", "pdf", "template-creator"]
+    }
+  ],
+  "presets": [
+    {
+      "id": "claude-settings",
+      "label": "Claude settings — Fable 5.1 [1m], xhigh effort, thinking, agent teams, auto mode, permissions, voice, status line",
+      "agents": ["claude-code"],
+      "files": [
+        { "op": "merge-json", "asset": "presets/claude/settings.json", "dest": "~/.claude/settings.json" },
+        { "op": "copy", "asset": "presets/claude/statusline-command.sh", "dest": "~/.claude/statusline-command.sh" },
+        { "op": "copy", "asset": "presets/claude/statusline-data.py", "dest": "~/.claude/statusline-data.py" }
+      ]
+    },
+    {
+      "id": "codex-config",
+      "label": "Codex config — gpt-6-astra, xhigh, pragmatic, on-request approvals, workspace-write + network, multi-agent, memories",
+      "agents": ["codex"],
+      "files": [
+        { "op": "merge-toml", "asset": "presets/codex/config.toml", "dest": "~/.codex/config.toml" }
+      ]
+    },
+    {
+      "id": "codex-global-instructions",
+      "label": "Codex global AGENTS.md — Clean Code for Agents (kept if one exists)",
+      "agents": ["codex"],
+      "files": [
+        { "op": "copy", "asset": "templates/clean-code-for-agents.md", "dest": "~/.codex/AGENTS.md", "keep": true }
+      ]
     }
   ],
   "templates": {
@@ -204,6 +323,8 @@
   },
   "gitignore": [
     ".claude/settings.local.json",
+    ".codex/hooks.json",
+    ".impeccable/config.local.json",
     ".opencode/cache/",
     ".agent-harness/"
   ]

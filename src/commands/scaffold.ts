@@ -22,8 +22,14 @@ import {
 } from '../core/catalog';
 import { isDryRun, log } from '../core/fsx';
 import { buildProjectMcpAction } from '../core/mcp';
-import { buildLocalSkillCopyActions, buildSkillAction, isLocalSkill } from '../core/skills';
-import { buildSubagentCopyAction } from '../core/subagents';
+import {
+  buildInstallerSkillAction,
+  buildLocalSkillCopyActions,
+  buildSkillAction,
+  hasInstaller,
+  isLocalSkill,
+} from '../core/skills';
+import { buildSubagentCopyAction, hasSubagentFor } from '../core/subagents';
 import { buildGitignoreMergeAction, buildTemplateCopyAction } from '../core/templates';
 import { promptScaffoldSelection } from '../ui/prompts';
 
@@ -110,10 +116,14 @@ function isEmptyPlan(p: ScaffoldPlan): boolean {
   );
 }
 
-/** Project-scoped skill installs, one per (skill × applicable agent). */
+/** Project-scoped skill installs, one per (skill × applicable agent); installer skills once. */
 async function skillActions(skills: SkillEntry[]): Promise<Action[]> {
   const actions: Action[] = [];
   for (const skill of skills) {
+    if (hasInstaller(skill)) {
+      actions.push(buildInstallerSkillAction(AGENTS, skill, 'project'));
+      continue;
+    }
     for (const agent of AGENTS) {
       if (!agent.supports.skills || !skillAppliesTo(skill, agent.id)) continue;
       if (isLocalSkill(skill)) {
@@ -126,12 +136,12 @@ async function skillActions(skills: SkillEntry[]): Promise<Action[]> {
   return actions;
 }
 
-/** Project-scoped custom subagent installs, one per (subagent × applicable agent). */
+/** Project-scoped custom subagent installs, one per (subagent × agent with a matching variant). */
 async function subagentActions(subagents: SubagentEntry[]): Promise<Action[]> {
   const actions: Action[] = [];
   for (const entry of subagents) {
     for (const agent of AGENTS) {
-      if (!agent.supports.subagents) continue;
+      if (!agent.supports.subagents || !hasSubagentFor(entry, agent)) continue;
       actions.push(await buildSubagentCopyAction(agent, entry, 'project'));
     }
   }

@@ -1,6 +1,6 @@
 /**
  * init — machine-level: configure selected agents with user-scope MCPs, skills,
- * and plugins, then print the (manual) login block.
+ * plugins, custom agents and presets, then print the (manual) login block.
  *
  * This module owns selection resolution + execution + the auth block. The
  * interactive clack flow lives in ui/prompts.ts and feeds resolved ids here.
@@ -18,11 +18,14 @@ import {
   type CatalogData,
   type McpEntry,
   type PluginEntry,
+  type PresetEntry,
   type SkillEntry,
   type SubagentEntry,
   loadCatalog,
   looksLikePlaceholder,
   mcpAppliesTo,
+  pluginAppliesTo,
+  presetAppliesTo,
   skillAppliesTo,
 } from '../core/catalog';
 import { isDryRun, log } from '../core/fsx';
@@ -31,9 +34,12 @@ import {
   buildPluginSettingsFallbackAction,
 } from '../core/plugins';
 import { buildUserMcpAction, requiredEnvVars } from '../core/mcp';
+import { buildPresetActions } from '../core/presets';
 import {
+  buildInstallerSkillAction,
   buildLocalSkillCopyActions,
   buildSkillAction,
+  hasInstaller,
   hasLocalSkill,
   isLocalSkill,
 } from '../core/skills';
@@ -48,6 +54,7 @@ export interface InitOptions {
   skill: string[];
   plugin: string[];
   subagent: string[];
+  preset: string[];
   all: boolean;
   /** Record the installed inventory in each agent's global instructions file. */
   manifest: boolean;
@@ -63,6 +70,7 @@ export interface Selection {
   skills: SkillEntry[];
   plugins: PluginEntry[];
   subagents: SubagentEntry[];
+  presets: PresetEntry[];
   /** Optional repo-level setup (interactive unified flow); flags leave it unset. */
   repo?: ScaffoldPlan;
 }
@@ -85,6 +93,7 @@ function selectionFromFlags(catalog: CatalogData, opts: InitOptions): Selection 
     skills: pick(catalog.skills, opts.skill),
     plugins: pick(catalog.plugins, opts.plugin),
     subagents: pick(catalog.subagents, opts.subagent),
+    presets: pick(catalog.presets, opts.preset),
   };
 }
 
@@ -110,7 +119,8 @@ function isInteractive(opts: InitOptions): boolean {
     opts.mcp.length > 0 ||
     opts.skill.length > 0 ||
     opts.plugin.length > 0 ||
-    opts.subagent.length > 0;
+    opts.subagent.length > 0 ||
+    opts.preset.length > 0;
   if (explicit) return false;
   return Boolean(process.stdout.isTTY && process.stdin.isTTY);
 }
@@ -141,11 +151,17 @@ export async function runInitCommand(opts: InitOptions): Promise<void> {
       .join(', ')}`,
   );
 
+  // Presets first: a global AGENTS.md/CLAUDE.md template must land before the
+  // per-agent manifest block is merged into that same file.
+  await runPresets(selection);
+
   for (const agent of selection.agents) {
     log.plain('');
     log.step(pc.bold(agent.label));
     await configureAgent(agent, selection, opts);
   }
+
+  await runInstallerSkills(selection);
 
   if (selection.repo) {
     const repoActions = await buildScaffoldActions(catalog, selection.repo);
@@ -178,9 +194,11 @@ async function configureAgent(
     log.plain(`   ${pc.dim('· skip MCPs — unsupported')}`);
   }
 
-  // Skills (delegate to npx skills; direct-copy fallback on failure)
+  // Skills (delegate to npx skills; direct-copy fallback on failure).
+  // Installer-backed skills run once for all agents afterwards.
   if (agent.supports.skills) {
     for (const s of sel.skills.filter((skill) => skillAppliesTo(skill, agent.id))) {
+      if (hasInstaller(s)) continue;
       if (isLocalSkill(s)) {
         await runActions(await buildLocalSkillCopyActions(agent, s, 'user'));
         continue;
@@ -195,11 +213,11 @@ async function configureAgent(
     log.plain(`   ${pc.dim('· skip skills — unsupported')}`);
   }
 
-  // Plugins (Claude only)
+  // Plugins (Claude Code via CLI, Codex via config.toml)
+  const pluginsHere = sel.plugins.filter((p) => pluginAppliesTo(p, agent.id));
   if (agent.supports.plugins) {
-    const forThisAgent = sel.plugins.filter((p) => p.agent === agent.id);
-    for (const p of forThisAgent) {
-      const actions = buildPluginActions(agent, p);
+    for (const p of pluginsHere) {
+      const actions = await buildPluginActions(agent, p);
       if (actions.length === 0) {
         // claude CLI not on PATH -> settings fallback
         await runAction(await buildPluginSettingsFallbackAction(p));
@@ -207,11 +225,11 @@ async function configureAgent(
         await runActions(actions);
       }
     }
-  } else if (sel.plugins.some((p) => p.agent === agent.id)) {
+  } else if (pluginsHere.length) {
     log.plain(`   ${pc.dim('· skip plugins — unsupported')}`);
   }
 
-  // Custom subagents (Claude only)
+  // Custom subagents (Claude Code .md, Codex .toml)
   if (agent.supports.subagents) {
     for (const s of sel.subagents) {
       await runAction(await buildSubagentCopyAction(agent, s, 'user'));
@@ -223,6 +241,29 @@ async function configureAgent(
   // Manifest — what got installed, so the agent can read it back later.
   if (opts.manifest) {
     await runAction(await buildManifestAction(agent, sel, opts.version));
+  }
+}
+
+/** Skills with their own installer: one call covering every selected agent. */
+async function runInstallerSkills(sel: Selection): Promise<void> {
+  const installers = sel.skills.filter(hasInstaller);
+  if (!installers.length) return;
+  log.plain('');
+  log.step(pc.bold('Skills com instalador próprio'));
+  for (const s of installers) {
+    await runAction(buildInstallerSkillAction(sel.agents, s, 'user'));
+  }
+}
+
+/** Presets (settings / config merges) for the selected agents. */
+async function runPresets(sel: Selection): Promise<void> {
+  const agentIds = sel.agents.map((a) => a.id);
+  const applicable = sel.presets.filter((p) => presetAppliesTo(p, agentIds));
+  if (!applicable.length) return;
+  log.plain('');
+  log.step(pc.bold('Presets (settings / config)'));
+  for (const p of applicable) {
+    await runActions(await buildPresetActions(p, agentIds));
   }
 }
 
@@ -255,10 +296,13 @@ function printAuthBlock(sel: Selection): void {
     log.plain(`  ${a.label.padEnd(width)}  →  ${pc.cyan(a.login.cmd)}${note}`);
   }
   log.plain('');
-  log.plain(pc.dim('  MCPs with OAuth (Notion, Google…) authenticate on first tool use.'));
+  log.plain(pc.dim('  MCPs with OAuth (Figma, Notion, Google…) authenticate on first tool use.'));
   const envs = requiredEnvVars([...sel.mcps, ...(sel.repo?.mcps ?? [])]);
   if (envs.length) {
     log.plain(pc.dim(`  MCPs needing API keys — export in your shell/.env: ${envs.join(', ')}`));
+  }
+  if (sel.skills.some((s) => s.id === 'impeccable')) {
+    log.plain(pc.dim('  Impeccable: type /impeccable init inside the agent chat to set up design context.'));
   }
   log.plain('');
 }
