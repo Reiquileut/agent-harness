@@ -305,8 +305,8 @@ fresh machine reproduces it:
   Claude gets both via the official plugin) · `taskmaster`, `upstash-context-7-mcp` (Codex) ·
   `stitch` (Claude)
 - **Skills** — bundled: `anti-ai-slop`, `prd`, `find-skills`, `shadcn`, `grill-me`,
-  `grill-with-docs`, `paperclip-create-agent`, `gestao-crise-atalaia`, `paper-diario-atalaia`,
-  `computer-use`, `orca-cli`, `orchestration` · fetched with a
+  `grill-with-docs`, `paperclip-create-agent`, `computer-use`, `orca-cli`, `orchestration` ·
+  fetched with a
   bundled fallback: `archify` · via its own installer: `impeccable` (`npx impeccable install`,
   which also wires its design-detector hooks and Claude subagents)
 - **Agents** — `documentation-auditor`, `impeccable-manual-edit-applier` (Claude `.md` + Codex `.toml`)

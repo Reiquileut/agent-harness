@@ -154,18 +154,6 @@
       "skill": "paperclip-create-agent"
     },
     {
-      "id": "gestao-crise-atalaia",
-      "label": "Gestão de Crise Atalaia — social listening & panorama de dano (PT)",
-      "source": "local",
-      "skill": "gestao-crise-atalaia"
-    },
-    {
-      "id": "paper-diario-atalaia",
-      "label": "Paper Diário Atalaia — inteligência política diária/semanal/mensal (PT)",
-      "source": "local",
-      "skill": "paper-diario-atalaia"
-    },
-    {
       "id": "archify",
       "label": "Archify — architecture/workflow/sequence diagrams as standalone HTML (v2.12, MIT)",
       "source": "tt-a1i/archify",
