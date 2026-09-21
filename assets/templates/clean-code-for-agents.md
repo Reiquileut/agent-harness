@@ -50,16 +50,40 @@ The biggest reversal from 2008-era Clean Code — the agent reads comments and b
   find the others — the attention window has no gravity pulling "there are two copies".
 - Extract shared logic into a function, module, or mixin. This is refactor safety, not aesthetics.
 
-## 7. Tests the agent can run
+## 7. Tests: E2E first, failures before code
 Close the loop: **write → run test → read output → adjust → run again.** If tests
 don't run headless, the agent goes blind.
+
+**Order is non-negotiable**
+- **Never write a unit test after the code it tests.** A test written to fit code that
+  already exists encodes the bug along with the behavior — it passes by construction and
+  proves nothing.
+- Testing a unit in **isolation**? First write **every way it can fail** — empty, null,
+  boundary, wrong type, duplicate, out-of-order, timeout, partial failure, concurrent
+  write — **then** write the code. The failure list *is* the test suite; the code is what
+  makes it pass.
+
+**E2E is the default mechanism**
+- Prefer **end-to-end** tests over unit tests. Verify a complex feature by driving it the
+  way a real caller does: real stack, real wiring, real boundaries.
+- Why: an E2E test survives refactors, catches the integration bugs unit tests cannot see,
+  and is the only evidence the feature actually works.
+- Every E2E run ends in a **verifiable, repeatable artifact** at a fixed, documented path:
+  a structured report (JUnit XML / JSON), plus trace, screenshot, or request transcript
+  when the flow is visual or networked. Named, diffable, committed or uploaded by CI.
+- **Repeatable** means one documented command, same result on a clean machine, zero manual
+  steps, and pass/fail decided by the artifact — never by a human squinting at output.
+
+**Mechanics**
 - A **single command** runs all tests; document it in this file / README / Makefile / package.json.
 - Output in a predictable, structured format (JUnit XML, JSON) is ideal.
 - **Zero manual setup** — no manual DB seeding, out-of-repo secrets, or "copy and edit" config.
 - F.I.R.S.T: Fast, Independent, Repeatable, Self-validating, Timely.
-- Coverage: business logic **95%+**, total **80%+**. Every bugfix gets a regression test.
+- Coverage: business logic **95%+**, total **80%+**. Every bugfix gets a regression test —
+  E2E whenever the bug is reachable end-to-end.
 - Mock external I/O (API, DB, filesystem) with **named fakes** (`FakeEmailSender`,
-  `StubPaymentGateway`) — greppable, reusable — never inline stubs.
+  `StubPaymentGateway`) — greppable, reusable — never inline stubs. **Not in E2E:** an E2E
+  that mocks the system under test is a unit test in costume.
 
 ## 8. Predictable directory structure
 - Follow the framework convention (Rails, Django, Next.js, Laravel, Phoenix, FastAPI).
@@ -130,6 +154,10 @@ idempotency keys on mutations · health-check endpoint · feature flags on risky
 - ❌ Generic names (`data`, `handler`, `Manager`, `result`).
 - ❌ Duplicating logic instead of extracting.
 - ❌ Skipping a test on a "simple" change.
+- ❌ Writing a unit test after the code it covers.
+- ❌ Writing an isolated unit before listing how it can fail.
+- ❌ Shipping a complex feature with no E2E path proving it works.
+- ❌ An E2E run that leaves no artifact, or needs a human to read it to decide pass/fail.
 - ❌ Hardcoding a config value that belongs in env/constant.
 - ❌ Instantiating a dependency inside the class instead of injecting it.
 - ❌ Throwing an exception without the offending value in the message.
@@ -141,6 +169,8 @@ idempotency keys on mutations · health-check endpoint · feature flags on risky
 
 ## Project-Specific Section (fill in — read every iteration)
 - **Test command:** `<e.g. pnpm test>`
+- **E2E command:** `<e.g. pnpm test:e2e>`
+- **E2E artifact path:** `<e.g. artifacts/e2e/report.json, artifacts/e2e/traces/>`
 - **Lint command:** `<e.g. make lint>`
 - **Type-check command:** `<e.g. make typecheck>`
 - **Build command:** `<e.g. make build>`
@@ -156,7 +186,7 @@ idempotency keys on mutations · health-check endpoint · feature flags on risky
 ---
 
 **Root principle:** clean code for agents is infrastructure, not fashion. Small functions,
-SRP, unique names, explicit types, DRY, runnable tests, DI, provenance comments, and live
+SRP, unique names, explicit types, DRY, E2E-first tests, DI, provenance comments, and live
 Context7 verification are technical constraints measurable in tokens, latency, and output
 quality. Without them, the agent delivers plausible code that silently breaks what worked
 yesterday. With them, it's a multiplier.

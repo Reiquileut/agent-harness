@@ -7,7 +7,7 @@ import process9 from "process";
 // package.json
 var package_default = {
   name: "@r2t/agent-harness",
-  version: "1.4.0",
+  version: "1.5.0",
   description: "Dotfiles-for-AI-agents bootstrapper: one command to configure MCPs, skills, plugins, custom agents and settings presets across Claude Code, Codex, and OpenCode.",
   type: "module",
   bin: {
