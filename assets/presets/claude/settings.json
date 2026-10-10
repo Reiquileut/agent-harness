@@ -7,7 +7,6 @@
       "WebSearch",
       "WebFetch(domain:chromewebstore.google.com)",
       "Bash(curl:*)",
-      "Bash(powershell:*)",
       "Bash(claude doctor:*)",
       "Bash(claude mcp list:*)",
       "mcp__chrome-devtools__list_pages",
@@ -21,12 +20,20 @@
     ],
     "defaultMode": "auto"
   },
-  "model": "claude-fable-5-1[1m]",
   "effortLevel": "xhigh",
   "modelSettings": {
-    "claude-fable-5-1": { "effortLevel": "xhigh" },
-    "claude-opus-5": { "effortLevel": "xhigh" },
-    "claude-sonnet-5": { "effortLevel": "high" }
+    "claude-opus-5-5": {
+      "effortLevel": "xhigh"
+    },
+    "claude-opus-5": {
+      "effortLevel": "high"
+    },
+    "claude-fable-5-1": {
+      "effortLevel": "high"
+    },
+    "claude-sonnet-5": {
+      "effortLevel": "high"
+    }
   },
   "alwaysThinkingEnabled": true,
   "switchModelsOnFlag": true,
@@ -42,7 +49,10 @@
   "tui": "fullscreen",
   "theme": "light",
   "verbose": true,
-  "voice": { "enabled": true, "mode": "hold" },
+  "voice": {
+    "enabled": true,
+    "mode": "hold"
+  },
   "voiceEnabled": true,
   "remoteControlAtStartup": true,
   "inputNeededNotifEnabled": true,

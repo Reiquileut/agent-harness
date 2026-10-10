@@ -1,0 +1,25 @@
+{
+  "attribution": {
+    "commit": "",
+    "pr": "",
+    "sessionUrl": false
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash|PowerShell",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node",
+            "args": [
+              "{{HOME}}/.claude/hooks/bloquear-mencao-claude-commit.ts"
+            ],
+            "timeout": 10,
+            "statusMessage": "Conferindo menção ao Claude no commit"
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -2,21 +2,21 @@
 # Merge semantics: keys here win over existing scalars; tables merge; nothing else is touched.
 # Machine-specific keys (projects.*, notify, hooks.state, mcp_servers, marketplaces, plugins)
 # are intentionally absent — MCPs and plugins come from their own catalog sections.
+# Windows-only tables live in config.windows.toml (applied only on win32).
+# features.memories = false: long-term memory comes from ai-memory (catalog integration),
+# not Codex's native memories — the two would capture the same sessions twice.
 
-model = "gpt-6-astra"
+model = "gpt-6.1-sol"
 model_reasoning_effort = "xhigh"
 personality = "pragmatic"
 approval_policy = "on-request"
 approvals_reviewer = "guardian_subagent"
 sandbox_mode = "workspace-write"
-service_tier = "default"
-
-[windows]
-sandbox = "unelevated"
+service_tier = "priority"
 
 [features]
 multi_agent = true
-memories = true
+memories = false
 js_repl = false
 
 [sandbox_workspace_write]
@@ -36,7 +36,3 @@ followUpQueueMode = "queue"
 
 [desktop.open-in-target-preferences]
 global = "cursor"
-
-[computer_use.windows.always_allowed_app_ids]
-Chrome = true
-"chrome.exe" = true

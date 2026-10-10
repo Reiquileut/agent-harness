@@ -1,0 +1,9 @@
+# Windows-only Codex settings, merged after config.toml only when the platform is win32
+# (catalog `platforms: ["win32"]`). On Linux/macOS these tables would be dead config.
+
+[windows]
+sandbox = "unelevated"
+
+[computer_use.windows.always_allowed_app_ids]
+Chrome = true
+"chrome.exe" = true

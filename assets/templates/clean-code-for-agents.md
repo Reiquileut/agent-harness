@@ -1,7 +1,9 @@
 # Clean Code for Agents
 
-> Default standards file written by `agent-harness`. Serves as both `CLAUDE.md`
-> (Claude Code) and `AGENTS.md` (Codex / OpenCode). Short, imperative,
+> Default standards file written by `agent-harness`. This is the canonical
+> `AGENTS.md` (Codex / OpenCode read it directly); `CLAUDE.md` is a one-line
+> `@AGENTS.md` import, because Claude Code does not read AGENTS.md when a
+> CLAUDE.md exists. Edit rules here, never in CLAUDE.md. Short, imperative,
 > action-oriented — each line is reloaded every iteration, so density matters.
 > Fill in the **Project-Specific Section** at the bottom.
 
@@ -147,8 +149,63 @@ rate limiting · retry with exponential backoff · circuit breaker · aggressive
 timeouts · graceful degradation/fallback · input validation at all boundaries ·
 idempotency keys on mutations · health-check endpoint · feature flags on risky code.
 
+## Model routing — delegate to cheaper subagents (default, all projects)
+Goal: cut cost and speed up delivery. The orchestrator (**Opus 5.5** daily driver, or
+**Fable 5.1**) plans, decides, integrates, and reviews. It delegates execution to
+Sonnet/Haiku via the `Agent` tool's `model` param (`"sonnet"` / `"haiku"`) whenever a
+subtask fits below. Use a non-fork `subagent_type`; `fork` ignores `model`. Applies only
+to harnesses with model selection (Claude Code). Source: anthropic.com/claude/* pages, 2026-10-08.
+
+| Model | Price in/out per Mtok | Use for |
+|---|---|---|
+| **Fable 5.1** | $10 / $50 | Orchestrator only for multi-day, async, or unattended jobs, codebase-wide features, deep perf work, high-stakes code review, and multi-stage research. Otherwise prefer Opus (≈ Fable level on most work, 2.5x cheaper). |
+| **Opus 5.5** | $4 / $20 | Default orchestrator: ambiguous or architectural work, production code where correctness is critical, complex documents, long multi-tool agents, coordinating subagents, and final review. |
+| **Sonnet 5.5** | $2 / $10 | Well-scoped, well-defined tasks with clear acceptance criteria: implementing a specified feature or bugfix, reviewing a diff, investigating a defined question, drafting docs/reports/slides, UI polish, diagrams and user flows, analyzing given documents, and writing tests from a failure list. |
+| **Haiku 5.5** | $0.10 / $0.50 (≤100K prompt) | High-volume, repetitive, or latency-sensitive work: classify, summarize, extract fields, search or list files, mechanical edits across many files (rename, boilerplate), browser/form automation, routing, context compaction, running commands and reporting output, and parallel fan-out. |
+
+- Pick the **cheapest model that does the subtask reliably**. If its output fails review,
+  escalate one tier (Haiku → Sonnet → Opus); never retry the same tier more than once.
+- **Keep in the orchestrator:** ambiguous requirements, architecture and trade-off decisions,
+  anything touching money, auth, security, or data deletion, final integration, and conclusions for the user.
+- **Brief subagents completely** (goal, files, constraints, acceptance criteria, output
+  format). They do not see the conversation.
+- Run independent subtasks **in parallel** (several `Agent` calls in one message).
+- Don't delegate trivial one-step work (one grep, one read of a known file); the overhead
+  exceeds the savings.
+- The orchestrator **verifies subagent output** before reporting it as done, and the reply
+  states which model handled which subtask.
+
+### Cache discipline (subagent prompt-cache TTL = 5 min)
+Why: a cache read costs ~0.1x input; once a subagent idles > 5 min its whole context is
+re-written at 1.25x+ (~12–20x that call's input). Resuming large idle subagents drains the
+weekly limit. A fresh subagent loses nothing — the cost is in *keeping one alive and coming back*.
+User decision, 2026-10-09.
+- Subagents are **one-shot**: one complete brief → one result → done. Never SendMessage
+  a subagent idle > 4 min; spawn a fresh one with a compact brief (current diff + fix list).
+- No subagent waits: no pipelines/teams with idle agents; the orchestrator holds
+  dependencies and spawns the next agent only after the previous one finishes.
+- Long commands (build/test > 3 min) run in the orchestrator (background), not inside a
+  subagent. Haiku "runs commands" only for short ones.
+- Keep subagent context small: name the exact files, demand compact output (diff + summary).
+- Don't delegate when the orchestrator already holds the needed context.
+- Review subagent output immediately; if review takes > 4 min, fixes go to a fresh agent.
+- Main session too: resuming a huge session after a long idle re-pays its context; prefer a
+  fresh session from an ai-memory handoff.
+
+## Git workflow
+- **Conventional Commits** with a scope (`feat(web): …`, `fix(api): …`, `docs(agents): …`);
+  message language follows the project (PT-BR where the team writes PT-BR).
+- **No AI attribution** in commits or PRs: no `Co-Authored-By: Claude`, no
+  "Generated with Claude Code", no session links. (Claude Code: `attribution` blanked in
+  `~/.claude/settings.json` + a PreToolUse guard hook — both from `agent-harness`.)
+- **Never `git push`** (or open/merge a PR) unless the user asked for it in this session.
+- **No squash merges** — keep every commit for full traceability.
+- Branch before committing when on the default branch; commit only when asked.
+
 ## Forbidden behaviors (checklist)
 - ❌ Deleting a comment the agent wrote in a previous iteration.
+- ❌ Resuming (SendMessage) a subagent idle > 4 min, or leaving a subagent waiting on another.
+- ❌ Pushing, opening a PR, or adding AI attribution without the user asking.
 - ❌ A file above 500 lines, or a function above 20 lines without justification.
 - ❌ `any` / untyped signatures.
 - ❌ Generic names (`data`, `handler`, `Manager`, `result`).

@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
-# Status line derived from the user's oh-my-posh theme
-# (C:\Users\<user>\AppData\Local\oh-my-posh\themes\1_shell.omp.json),
-# which is loaded by the Windows PowerShell profile.
+# Status line derived from an oh-my-posh theme (session, time, git, path), runnable
+# from Git Bash on Windows and from bash on Linux/macOS.
 # Segments mirrored: session (user), time, git (branch/dirty/stash), path.
 # Added: context window usage and session cost. Model name is appended (dimmed).
 
@@ -13,9 +12,17 @@ base="${USERPROFILE//\\//}"
 [ -z "$base" ] && base="$HOME"
 py="$base/.claude/statusline-data.py"
 
+# Interpreter: Linux distros ship only `python3`; on Windows `python3` is often
+# the Microsoft Store alias stub, so prefer `python` there.
+if [ -n "${USERPROFILE:-}" ]; then
+  PY="$(command -v python || command -v python3)"
+else
+  PY="$(command -v python3 || command -v python)"
+fi
+
 # tr -d '\r': native Windows python prints CRLF, which would otherwise leave a
 # stray CR on every field (breaking the numeric guards and trailing segments).
-mapfile -t d < <(printf '%s' "$input" | python "$py" 2>/dev/null | tr -d '\r')
+mapfile -t d < <(printf '%s' "$input" | "$PY" "$py" 2>/dev/null | tr -d '\r')
 model="${d[0]:-Claude}"
 cwd="${d[1]:-}"
 cost="${d[2]:-}"
