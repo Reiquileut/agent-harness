@@ -1,0 +1,137 @@
+# Máquina nova no Ubuntu
+
+Runbook para deixar uma máquina Ubuntu pronta com Claude Code, Codex e OpenCode.
+O script é idempotente: rodar de novo só completa o que falta.
+
+## Pré-requisitos
+
+- Ubuntu com `sudo`, `curl` e internet (o resto o script instala).
+- Para um **overlay privado em git**: acesso ao repositório (ver abaixo).
+
+O `bootstrap/ubuntu.sh` instala: git, curl, jq, python3, make (apt), Node 22
+(NodeSource; precisa de >= 22.18), pnpm, gh (repositório apt oficial), uv,
+Claude Code (instalador nativo), Codex (`@openai/codex`), OpenCode (`opencode-ai`),
+task-master-ai e ai-memory (tarball de release do GitHub + sha256 em
+`~/.local/bin`). No fim roda `agent-harness init`; com `--yes` isso significa
+`init -y --all` nos três agentes (a integração ai-memory é pulada com aviso se
+faltar `AI_MEMORY_SERVER_URL`).
+
+## O comando
+
+Sem overlay, direto de uma máquina limpa:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Reiquileut/agent-harness/main/bootstrap/ubuntu.sh | bash -s -- --yes
+```
+
+Clonando antes:
+
+```bash
+git clone https://github.com/Reiquileut/agent-harness.git
+cd agent-harness && bash bootstrap/ubuntu.sh --yes
+```
+
+Com overlay privado em git, a ordem importa: o clone usa as credenciais do `gh`,
+que o próprio bootstrap instala. Então, numa máquina zerada:
+
+```bash
+bash bootstrap/ubuntu.sh --yes --skip-harness          # 1) só pré-requisitos
+gh auth login && gh auth setup-git                     # 2) credenciais git
+bash bootstrap/ubuntu.sh --yes --overlay git@github.com:OWNER/REPO-PRIVADO.git   # 3) harness + overlay
+```
+
+(O passo 3 pula tudo que já foi instalado. Overlay em pasta local dispensa o passo 2.)
+
+Flags: `--dry-run`, `--yes`, `--overlay <spec>`, `--skip-harness`,
+`--harness-src <dir>`, `--report <file>`. Argumentos extras para o `init` vão
+depois de `--`, por exemplo `-- --agent claude-code --preset claude-settings`.
+
+## Antes de usar um overlay git privado
+
+O harness faz clone raso com as **suas** credenciais git, numa pasta temporária
+sempre apagada. Numa máquina nova, autentique antes:
+
+```bash
+gh auth login && gh auth setup-git
+```
+
+Specs aceitas: `git@…`, `https://…`, `ssh://`, `file://`, `github:owner/repo` ou
+um diretório local. Também dá para usar a variável `AGENT_HARNESS_OVERLAY`
+(vários overlays separados por `;`).
+
+## Variáveis de ambiente
+
+Os valores vêm do **seu gerenciador de senhas**; nunca de um repositório. Exporte
+no shell (por exemplo em `~/.bashrc`) antes do passo de ai-memory e dos MCPs:
+
+```bash
+export AI_MEMORY_SERVER_URL="..."     # obrigatória para a integração ai-memory
+export AI_MEMORY_AUTH_TOKEN="..."     # lida pelo próprio ai-memory
+export STITCH_API_KEY="..."           # MCP Stitch (Claude)
+# + as variáveis listadas pelo overlay (o manifesto e o bloco de login as mostram)
+```
+
+Sem `AI_MEMORY_SERVER_URL` a integração avisa e é pulada; exporte e rode de novo.
+
+## Logins
+
+O harness nunca automatiza login. Rode uma vez cada:
+
+- [ ] `claude` (OAuth no primeiro uso, ou `/login`)
+- [ ] `codex login`
+- [ ] `opencode auth login`
+- [ ] `gh auth login`
+
+MCPs com OAuth autenticam no primeiro uso.
+
+## Rodar de novo para o ai-memory
+
+Depois de exportar as variáveis:
+
+```bash
+npx -y github:reiquileut/agent-harness init -y --integration ai-memory \
+  -a claude-code -a codex -a opencode
+ai-memory doctor
+```
+
+A integração roda `install-mcp` e `install-hooks` por agente, e uma vez
+`install-instructions --target ~/.codex/AGENTS.md`. Também mescla
+`autoMemoryEnabled:false` e `autoDreamEnabled:false` nas configurações do Claude.
+
+## Checklist de verificação
+
+- [ ] `~/.codex/AGENTS.md` existe (padrão Clean Code for Agents).
+- [ ] `~/.claude/CLAUDE.md` contém a linha `@~/.codex/AGENTS.md`.
+- [ ] `~/.codex/config.toml` existe **sem** as tabelas `[windows]`.
+- [ ] `~/.claude/hooks/bloquear-mencao-claude-commit.ts` existe (preset
+      `no-ai-attribution`) e o `~/.claude/settings.json` o referencia.
+- [ ] `~/.claude/skills/` e `~/.agents/skills/` têm as skills escolhidas.
+- [ ] O bloco `agent-harness` aparece no fim do `AGENTS.md` global (manifesto).
+- [ ] `claude --version`, `codex --version`, `opencode --version` respondem.
+- [ ] `ai-memory doctor` sem erros.
+
+## Dry-run
+
+```bash
+bash bootstrap/ubuntu.sh --dry-run          # mostra os passos do bootstrap
+npx -y github:reiquileut/agent-harness init --dry-run --all   # mostra cada ação do init, sem escrever
+```
+
+## Problemas comuns
+
+- **Node < 22.18:** o hook de atribuição roda TypeScript nativo e precisa de
+  >= 22.18. Rode o bootstrap de novo (ele instala Node 22 via NodeSource) e
+  confira com `node -v`.
+- **`~/.local/bin` fora do PATH:** o ai-memory e o Claude Code ficam lá. Adicione
+  `export PATH="$HOME/.local/bin:$PATH"` ao `~/.bashrc` e abra um novo shell.
+- **Clone do overlay falha:** rode `gh auth login && gh auth setup-git`, teste o
+  acesso com `git ls-remote <url>`. Specs que começam com `-` são rejeitadas, e
+  caminhos de asset com `..` ou absolutos também.
+- **Pencil ignorado no Linux:** de propósito. O MCP e as tabelas `[windows]` do
+  Codex são só `win32` (campo `platforms` do catálogo).
+- **Colisão de IDs no overlay:** a entrada do overlay vence, com aviso.
+- **Credenciais na saída:** URLs com credenciais são redigidas; mesmo assim, não
+  cole logs com tokens em lugar público.
+
+Teste de ponta a ponta: o CI roda este script num contêiner `ubuntu:24.04` limpo
+(job `bootstrap-ubuntu`, artefato `artifacts/e2e/bootstrap-ubuntu.json`).
