@@ -3,7 +3,7 @@
   "diagram_type": "architecture",
   "meta": {
     "title": "Checkout Platform — Fraud Gate",
-    "subtitle": "Fraud screening now owns payment authorization",
+    "output": "checkout-platform.head.html",
     "visual_preset": "signal-flow"
   },
   "components": [

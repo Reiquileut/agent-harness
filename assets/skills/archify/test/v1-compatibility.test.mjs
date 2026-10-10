@@ -13,7 +13,9 @@ const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'archify-v1-compat-'));
 function render(mode, doc) {
   const input = path.join(tmp, `${mode}.json`);
   const output = path.join(tmp, `${mode}.html`);
-  fs.writeFileSync(input, JSON.stringify(doc));
+  const renderDoc = structuredClone(doc);
+  renderDoc.meta = { ...renderDoc.meta, output: `${mode}-v1-compatibility.html` };
+  fs.writeFileSync(input, JSON.stringify(renderDoc));
   try {
     execFileSync('node', [
       path.join(skillRoot, `renderers/${mode}/render-${mode}.mjs`),
@@ -28,7 +30,9 @@ function render(mode, doc) {
 
 function validate(mode, doc) {
   const input = path.join(tmp, `${mode}-validate.json`);
-  fs.writeFileSync(input, JSON.stringify(doc));
+  const cliDoc = structuredClone(doc);
+  cliDoc.meta = { ...cliDoc.meta, output: `${mode}-v1-validation.html` };
+  fs.writeFileSync(input, JSON.stringify(cliDoc));
   try {
     execFileSync('node', [
       path.join(skillRoot, 'bin/archify.mjs'),
@@ -95,6 +99,169 @@ for (const [mode, filename] of Object.entries(OFFICIAL_V1_EXAMPLES)) {
     assert.equal(validated.code, 0, validated.stderr);
   });
 }
+
+test('quality-profile lifecycle keeps the checked-in authored via authoritative', () => {
+  const doc = JSON.parse(fs.readFileSync(path.join(skillRoot, 'examples/agent-run.lifecycle.json'), 'utf8'));
+  const transition = doc.transitions.find(({ id }) => id === 'approval-cancelled');
+  assert.deepEqual(transition.via, [[480, 336], [480, 432], [402, 432]]);
+
+  const rendered = render('lifecycle', doc);
+  assert.equal(rendered.code, 0, rendered.stderr);
+  const html = fs.readFileSync(rendered.output, 'utf8');
+  assert.match(
+    html,
+    /data-edge-id="approval-cancelled"[^>]*data-composition-points="[^"]*480,336;480,432;402,432[^"]*"/,
+  );
+  const validated = validate('lifecycle', doc);
+  assert.equal(validated.code, 0, validated.stderr);
+});
+
+test('legacy v1 architecture auto viewBox accommodates all seven implicit auto legend kinds', () => {
+  const types = ['frontend', 'backend', 'database', 'cloud', 'security', 'messagebus', 'external'];
+  const doc = {
+    schema_version: 1,
+    diagram_type: 'architecture',
+    meta: { title: 'Narrow legacy architecture' },
+    components: types.map((type, index) => ({
+      id: `component_${index}`,
+      type,
+      label: type,
+      pos: [0, 40 + index * 76],
+      size: [120, 52],
+    })),
+    connections: [],
+  };
+
+  const rendered = render('architecture', doc);
+  assert.equal(rendered.code, 0, rendered.stderr);
+  const html = fs.readFileSync(rendered.output, 'utf8');
+  const svg = html.match(/<svg\b[\s\S]*?<\/svg>/)?.[0] || '';
+  const viewBox = svg.match(/viewBox="0 0 ([\d.]+) ([\d.]+)"/)?.slice(1).map(Number);
+  const baselines = [...svg.matchAll(/data-legend-baseline="([\d.]+)"/g)].map((match) => Number(match[1]));
+  assert.deepEqual([...svg.matchAll(/data-legend-semantic-kind="([^"]+)"/g)].map((match) => match[1]), types);
+  assert.ok(viewBox && baselines.length === types.length);
+  assert.ok(viewBox[0] > 160, 'auto viewBox should widen for its widest measured legend entry');
+  assert.ok(Math.max(...baselines) < viewBox[1]);
+  assert.ok(Math.min(...baselines) > 40 + (types.length - 1) * 76 + 52);
+
+  const validated = validate('architecture', doc);
+  assert.equal(validated.code, 0, validated.stderr);
+});
+
+function narrowExplicitViewBoxDocuments() {
+  const componentTypes = ['frontend', 'backend', 'database', 'cloud', 'security', 'messagebus', 'external'];
+  return {
+    architecture: {
+      schema_version: 1,
+      diagram_type: 'architecture',
+      meta: { title: 'Legacy narrow architecture', viewBox: [320, 800] },
+      components: componentTypes.map((type, index) => ({
+        id: `component_${index}`,
+        type,
+        label: type,
+        pos: [40, 90 + index * 90],
+        size: [120, 52],
+      })),
+      connections: [],
+    },
+    workflow: {
+      schema_version: 1,
+      diagram_type: 'workflow',
+      meta: { title: 'Legacy narrow workflow', viewBox: [700, 400] },
+      lanes: [{ id: 'first', label: 'First' }, { id: 'second', label: 'Second' }],
+      nodes: componentTypes.map((type, index) => ({
+        id: `node_${index}`,
+        lane: index < 3 ? 'first' : 'second',
+        col: index < 3 ? index * 2 : [0, 2, 4, 5][index - 3],
+        type,
+        label: type,
+      })),
+      edges: [],
+    },
+    sequence: {
+      schema_version: 1,
+      diagram_type: 'sequence',
+      meta: { title: 'Legacy narrow sequence', viewBox: [480, 480] },
+      participants: [
+        { id: 'left', type: 'frontend', label: 'Left' },
+        { id: 'right', type: 'backend', label: 'Right' },
+      ],
+      messages: ['emphasis', 'return', 'security', 'dashed', 'default'].map((variant, index) => ({
+        from: index % 2 ? 'right' : 'left',
+        to: index % 2 ? 'left' : 'right',
+        y: 170 + index * 40,
+        label: variant,
+        variant,
+      })),
+    },
+    dataflow: {
+      schema_version: 1,
+      diagram_type: 'dataflow',
+      meta: { title: 'Legacy narrow dataflow', viewBox: [423, 720] },
+      stages: [{ label: 'Input' }, { label: 'Output' }],
+      nodes: [
+        { id: 'in_0', type: 'backend', label: 'In 0', stage: 0, row: 0 },
+        { id: 'out_0', type: 'database', label: 'Out 0', stage: 1, row: 0 },
+        { id: 'in_1', type: 'backend', label: 'In 1', stage: 0, row: 1 },
+        { id: 'out_1', type: 'backend', label: 'Out 1', stage: 1, row: 1 },
+        { id: 'in_2', type: 'backend', label: 'In 2', stage: 0, row: 2 },
+        { id: 'out_2', type: 'backend', label: 'Out 2', stage: 1, row: 2 },
+        { id: 'in_3', type: 'backend', label: 'In 3', stage: 0, row: 3 },
+        { id: 'out_3', type: 'backend', label: 'Out 3', stage: 1, row: 3 },
+      ],
+      flows: ['emphasis', 'security', 'dashed', 'default'].map((variant, index) => ({
+        from: `in_${index}`,
+        to: `out_${index}`,
+        label: variant,
+        variant,
+        route: 'straight',
+      })),
+    },
+    lifecycle: {
+      schema_version: 1,
+      diagram_type: 'lifecycle',
+      meta: { title: 'Legacy narrow lifecycle', viewBox: [420, 800] },
+      lanes: [{ id: 'main', label: 'Lifecycle' }],
+      states: ['start', 'active', 'waiting', 'decision', 'success', 'failure', 'neutral', 'external'].map((type, index) => ({
+        id: `state_${index}`,
+        type,
+        label: type,
+        lane: 'main',
+        col: index % 2,
+        yOffset: Math.floor(index / 2) * 72,
+      })),
+      transitions: [],
+    },
+  };
+}
+
+test('legacy v1 explicit narrow viewBoxes never hard-fail on an implicit auto legend', () => {
+  const expectedNodeCounts = { architecture: 7, workflow: 7, sequence: 2, dataflow: 8, lifecycle: 8 };
+  for (const [mode, doc] of Object.entries(narrowExplicitViewBoxDocuments())) {
+    assert.equal(doc.meta.legend, undefined);
+    const rendered = render(mode, doc);
+    assert.equal(rendered.code, 0, `${mode}: ${rendered.stderr}`);
+    const svg = fs.readFileSync(rendered.output, 'utf8').match(/<svg\b[\s\S]*?<\/svg>/)?.[0] || '';
+    assert.equal((svg.match(/data-node-id=/g) || []).length, expectedNodeCounts[mode], `${mode}: topology must remain intact`);
+    if (mode === 'lifecycle') {
+      assert.match(svg, />Legend</, 'a fitting implicit legend should remain visible');
+      // 8 state kinds plus the non-interactive `final` structural entry
+      // (the col-1 states have no outgoing transitions).
+      assert.equal((svg.match(/data-legend-semantic-kind=/g) || []).length, 9);
+    } else if (mode === 'sequence') {
+      // A sequence legend wraps into the room below its last message; it stays
+      // clear of that content instead of being dropped.
+      assert.match(svg, />Legend</, 'a wrapped implicit legend that fits below the content remains visible');
+      const title = Number(svg.match(/<text x="[\d.]+" y="([\d.]+)"[^>]*>Legend<\/text>/)[1]);
+      const lastMessage = Math.max(...doc.messages.map((message) => message.y));
+      assert.ok(title - 12 >= lastMessage + 6 + 12, `legend title ${title} must clear the last message at ${lastMessage}`);
+    } else {
+      assert.doesNotMatch(svg, />Legend</, `${mode}: an unfit implicit legend should degrade without overlap`);
+    }
+    const validated = validate(mode, doc);
+    assert.equal(validated.code, 0, `${mode}: ${validated.stderr}`);
+  }
+});
 
 test('legacy v1 architecture geometry remains renderable without an explicit quality profile', () => {
   const doc = {

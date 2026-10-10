@@ -20,6 +20,7 @@ function run(args) {
 
 function writeFixture(name, source) {
   const file = path.join(tmp, name);
+  if (source?.meta && source.meta.output === undefined) source.meta.output = 'fixture.html';
   fs.writeFileSync(file, JSON.stringify(source, null, 2));
   return file;
 }
@@ -146,4 +147,95 @@ test('repair receipt: repository evidence failures retain a stable rule and exac
   assert.deepEqual(repair.supportedFixes, ['pass --repo-root with the matching local Git checkout']);
 });
 
+test('repair receipt: public validate reports borderline desktop readability with a supported fix', () => {
+  const input = writeFixture('borderline-readability.architecture.json', {
+    schema_version: 1,
+    diagram_type: 'architecture',
+    meta: {
+      title: 'Borderline desktop readability',
+      quality_profile: 'showcase',
+      viewBox: [1826, 804],
+    },
+    components: [{
+      id: 'tool-runtime',
+      type: 'security',
+      label: 'ToolRuntime',
+      sublabel: 'OpenAI · Anthropic · provider gateways',
+      pos: [100, 100],
+      size: [194, 70],
+    }],
+    connections: [],
+  });
+  const result = run(['validate', 'architecture', input, '--quality', 'showcase', '--json']);
+
+  assert.equal(result.status, 1, result.stderr || result.stdout);
+  assert.equal(result.stderr, '');
+  const repair = receipt(result).diagnostics.find(
+    (entry) => entry.code === 'composition/desktop-readability',
+  );
+  assert.ok(repair);
+  assert.deepEqual(repair.subject, { check: 'composition', nodeId: 'tool-runtime' });
+  assert.ok(repair.evidence.projectedFontPx < repair.evidence.minimumProjectedFontPx);
+  const fix = repair.supportedFixes.join(' ');
+  assert.match(fix, /complete viewBox width is at most \d+px/);
+  assert.match(fix, /desktop budget/);
+  assert.doesNotMatch(fix, /labelAt|labelDx|labelDy|labelSegment/);
+});
+
 process.on('exit', () => fs.rmSync(tmp, { recursive: true, force: true }));
+
+test('repair receipt: readability identifies the failing node despite repeated copy', () => {
+  for (const command of ['validate', 'deliver']) {
+    for (const failingIndex of [0, 1]) {
+      const ids = ['billing-worker', 'email-worker'];
+      const input = writeFixture(`readability-${command}-${failingIndex}.json`, {
+        schema_version: 1, diagram_type: 'architecture',
+        meta: { title: 'Worker pools', viewBox: [1200, 400] },
+        components: ids.map((id, i) => ({
+          id, type: 'backend', label: 'Worker', sublabel: 'Processes queued jobs',
+          pos: [80 + i * 420, 100], size: [i === failingIndex ? 100 : 300, 70],
+        })),
+        connections: [],
+      });
+      const output = path.join(tmp, `readability-${command}-${failingIndex}.html`);
+      const result = run([command, 'architecture', input,
+        ...(command === 'deliver' ? [output] : []), '--quality', 'showcase', '--json']);
+      assert.equal(result.status, 1);
+      const failure = receipt(result);
+      assert.equal(failure.stage, 'check');
+      const diagnostics = failure.diagnostics.filter(d => d.code === 'composition/desktop-readability');
+      assert.equal(diagnostics.length, 1);
+      assert.deepEqual(diagnostics[0].subject, { check: 'composition', nodeId: ids[failingIndex] });
+      assert.equal(diagnostics[0].evidence.text, 'Processes queued jobs');
+      assert.equal(diagnostics[0].evidence.projectedFontPx, 5.6575);
+      assert.equal(fs.existsSync(output), false);
+    }
+  }
+});
+
+test('repair receipt: edge readability advises a projection-changing reflow, not label positioning', () => {
+  const input = writeFixture('edge-readability.architecture.json', {
+    schema_version: 1,
+    diagram_type: 'architecture',
+    meta: { title: 'Edge readability', quality_profile: 'showcase', viewBox: [1438, 800] },
+    components: [
+      { id: 'listener', type: 'backend', label: 'Listener', pos: [120, 260], size: [180, 80] },
+      { id: 'handler', type: 'backend', label: 'Handler', pos: [760, 260], size: [180, 80] },
+    ],
+    connections: [{ id: 'request', from: 'listener', to: 'handler', label: 'method path body' }],
+  });
+  const result = run(['validate', 'architecture', input, '--quality', 'showcase', '--json']);
+  assert.equal(result.status, 1, result.stderr || result.stdout);
+  const repair = receipt(result).diagnostics.find((entry) => entry.code === 'composition/desktop-readability');
+  assert.ok(repair);
+  assert.equal(repair.evidence.owner.kind, 'edge');
+  assert.equal(repair.evidence.owner.id, 'request');
+  assert.equal(repair.evidence.sourceFontPx, 8);
+  assert.equal(repair.evidence.availableDiagramWidth, 930);
+  assert.equal(repair.evidence.viewBoxWidth, 1438);
+  const fix = repair.supportedFixes.join(' ');
+  assert.match(fix, /complete viewBox width is at most 1240px/);
+  assert.match(fix, /8px source text at 930px desktop budget/);
+  assert.match(fix, /Preserve the semantic text and any supplied coordinates, routes, sides, channels, and labels/);
+  assert.doesNotMatch(fix, /labelAt|labelDx|labelDy|labelSegment|reposition/i);
+});

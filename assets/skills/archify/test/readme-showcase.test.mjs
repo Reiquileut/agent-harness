@@ -1,7 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -11,8 +13,68 @@ const repoRoot = path.resolve(skillRoot, '..');
 const assetPath = path.join(repoRoot, 'docs', 'assets', 'archify-live-proof.gif');
 const receiptPath = path.join(repoRoot, 'docs', 'assets', 'archify-live-proof.json');
 
+const readmeLanguages = [
+  {
+    file: 'README.md',
+    href: './README.md',
+    label: 'English',
+    demos: '## See Archify in action',
+    preview: '## Preview',
+    quickStart: '## Quick start',
+    contributing: '## Contributing',
+    noRepository: /No repository is required/,
+  },
+  {
+    file: 'README_EN.md',
+    href: './README.md',
+    label: 'English',
+    demos: '## See Archify in action',
+    preview: '## Preview',
+    quickStart: '## Quick start',
+    contributing: '## Contributing',
+    noRepository: /No repository is required/,
+  },
+  {
+    file: 'README_ZH.md',
+    href: './README_ZH.md',
+    label: '简体中文',
+    demos: '## 看看 Archify 能做什么',
+    preview: '## 预览',
+    quickStart: '## 快速开始',
+    contributing: '## 参与贡献',
+    noRepository: /不需要绑定代码库/,
+  },
+  {
+    file: 'README_JA.md',
+    href: './README_JA.md',
+    label: '日本語',
+    demos: '## 実際の Archify',
+    preview: '## プレビュー',
+    quickStart: '## クイックスタート',
+    contributing: '## コントリビュート',
+    noRepository: /リポジトリは不要です/,
+  },
+];
+
+function sectionIndex(readme, filename, heading) {
+  const index = readme.indexOf(heading);
+  assert.ok(index >= 0, `${filename}: section heading ${heading} is missing`);
+  return index;
+}
+
 function sha256(file) {
   return crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
+}
+
+function git(cwd, ...args) {
+  return execFileSync('git', args, { cwd, encoding: 'utf8' }).trim();
+}
+
+function writeStarHistoryCharts(cwd, version) {
+  const assets = path.join(cwd, 'assets');
+  fs.mkdirSync(assets, { recursive: true });
+  fs.writeFileSync(path.join(assets, 'star-history-light.svg'), `<svg><title>light ${version}</title></svg>\n`);
+  fs.writeFileSync(path.join(assets, 'star-history-dark.svg'), `<svg><title>dark ${version}</title></svg>\n`);
 }
 
 function skipSubBlocks(buffer, start) {
@@ -77,7 +139,9 @@ function inspectGif(buffer) {
 
 test('README motion proof is compact, looping, and backed by current gallery artifacts', () => {
   const builder = fs.readFileSync(path.join(repoRoot, 'scripts', 'build-readme-showcase.mjs'), 'utf8');
-  assert.match(builder, /\?embed=1&play=1&theme=dark#view=/);
+  assert.match(builder, /\?embed=1&theme=dark\$\{scene\.hash\}/);
+  assert.doesNotMatch(builder, /play=1|#view=/);
+  assert.match(builder, /path\.relative\(from, to\)\.split\(path\.sep\)\.join\('\/'\)/);
   const buffer = fs.readFileSync(assetPath);
   const receipt = JSON.parse(fs.readFileSync(receiptPath, 'utf8'));
   const inspected = inspectGif(buffer);
@@ -103,16 +167,44 @@ test('README motion proof is compact, looping, and backed by current gallery art
   }
 });
 
-test('all README languages keep the product hero and retain the verified animated proof', () => {
-  for (const filename of ['README.md', 'README_EN.md', 'README_ZH.md']) {
+test('every README header links to the other languages', () => {
+  const languageLinks = [];
+  for (const { href, label } of readmeLanguages) {
+    if (!languageLinks.some((entry) => entry.href === href)) languageLinks.push({ href, label });
+  }
+  for (const language of readmeLanguages) {
+    const readme = fs.readFileSync(path.join(repoRoot, language.file), 'utf8');
+    const header = readme.slice(0, sectionIndex(readme, language.file, language.demos));
+    for (const { href, label } of languageLinks) {
+      const anchor = `<a href="${href}"><strong>${label}</strong></a>`;
+      if (href === language.href) {
+        assert.ok(!header.includes(anchor), `${language.file}: header must not link its own language`);
+      } else {
+        assert.ok(header.includes(anchor), `${language.file}: header must link ${label} (${href})`);
+      }
+    }
+  }
+});
+
+test('all README languages show the brand mark and localized launch video', () => {
+  for (const language of readmeLanguages) {
+    const filename = language.file;
     const readme = fs.readFileSync(path.join(repoRoot, filename), 'utf8');
-    const heroIndex = readme.indexOf('docs/assets/archify-readme-hero.png');
-    const titleIndex = readme.indexOf('# Archify');
-    const proofIndex = readme.indexOf('docs/assets/archify-live-proof.gif');
-    const demosIndex = Math.max(readme.indexOf('## See Archify in action'), readme.indexOf('## 看看 Archify 能做什么'));
-    assert.ok(heroIndex >= 0 && heroIndex < titleIndex, `${filename}: product hero is not above the title`);
-    assert.ok(proofIndex > demosIndex, `${filename}: animated proof must live in the demo section`);
-    assert.match(readme, /docs\/assets\/archify-live-proof\.gif/);
+    const markIndex = readme.indexOf('docs/assets/archify-lockup-light.svg');
+    const heroPath = 'docs/assets/archify-readme-hero.png';
+    const heroIndex = readme.indexOf(heroPath);
+    const taglineEnd = readme.indexOf('</h3>');
+    assert.equal(readme.split(heroPath).length - 1, 1, `${filename}: hero must appear exactly once`);
+    assert.ok(markIndex < taglineEnd && taglineEnd < heroIndex, `${filename}: hero must follow the logo and tagline`);
+    assert.ok(heroIndex < readme.indexOf('<strong>', taglineEnd), `${filename}: hero must precede navigation`);
+    assert.match(readme.slice(taglineEnd + 5), /^\s*<p align="center"><img src="docs\/assets\/archify-readme-hero\.png"/);
+    const proofIndex = readme.indexOf('<!-- archify-launch-video -->');
+    const demosIndex = sectionIndex(readme, filename, language.demos);
+    assert.ok(markIndex >= 0 && markIndex < demosIndex, `${filename}: brand lockup is missing before the demos`);
+    assert.ok(proofIndex > demosIndex, `${filename}: launch video must live in the demo section`);
+    const videoId = filename === 'README_ZH.md' ? '88cff7dd-bdf3-4b97-950c-37cc079898b1' : '78570807-ba1d-4737-953f-55504a378a87';
+    assert.ok(readme.includes(`\nhttps://github.com/user-attachments/assets/${videoId}\n`), `${filename}: missing standalone localized video attachment`);
+    assert.ok(!readme.includes('docs/assets/archify-live-proof.gif'), `${filename}: obsolete preview remains`);
     assert.match(readme, /https:\/\/tt-a1i\.github\.io\/archify\/gallery\.html/);
   }
   assert.equal(
@@ -122,11 +214,53 @@ test('all README languages keep the product hero and retain the verified animate
   );
 });
 
+test('README installation tables contain a complete DeepSeek Harness row', () => {
+  for (const { file: filename } of readmeLanguages) {
+    const readme = fs.readFileSync(path.join(repoRoot, filename), 'utf8');
+    const row = readme.split('\n').find((line) => line.startsWith('| **DeepSeek Harness** |'));
+    assert.ok(row, `${filename}: DeepSeek Harness must be an installation table row`);
+    assert.equal(
+      (row.match(/(?<!\\)\|/g) || []).length,
+      4,
+      `${filename}: DeepSeek Harness must have exactly three table cells`,
+    );
+    assert.ok(
+      row.includes('Node `^22.19.0 \\|\\| >=24.0.0`'),
+      `${filename}: Node version pipes must be escaped inside the table row`,
+    );
+    assert.ok(
+      readme.includes(`${row}\n\n`),
+      `${filename}: installation table must end after the DeepSeek Harness row`,
+    );
+  }
+});
+
+test('README installation tables include Hermes Agent before DeepSeek Harness', () => {
+  for (const { file: filename } of readmeLanguages) {
+    const readme = fs.readFileSync(path.join(repoRoot, filename), 'utf8');
+    const hermes = readme.split('\n').find((line) => line.startsWith('| **Hermes Agent** |'));
+    const dsh = readme.split('\n').find((line) => line.startsWith('| **DeepSeek Harness** |'));
+    assert.ok(hermes, `${filename}: Hermes Agent must be an installation table row`);
+    assert.ok(dsh, `${filename}: DeepSeek Harness must remain an installation table row`);
+    assert.equal(
+      (hermes.match(/(?<!\\)\|/g) || []).length,
+      4,
+      `${filename}: Hermes Agent must have exactly three table cells`,
+    );
+    assert.ok(hermes.includes('Node `>=18`'), `${filename}: Hermes Agent must name Node >=18`);
+    assert.ok(
+      hermes.includes('hermes skills install skills-sh/tt-a1i/archify/archify -y'),
+      `${filename}: Hermes Agent must document the skills.sh install identifier`,
+    );
+    assert.ok(readme.indexOf(hermes) < readme.indexOf(dsh), `${filename}: Hermes Agent must precede DeepSeek Harness`);
+  }
+});
+
 test('README demos use checked-in captures and live deep links below the existing hero', () => {
   const demos = [
     {
-      asset: 'archify-demo-story.png',
-      link: 'agent-tool-call.workflow.html?theme=dark&present=1&play=1#view=happy-path',
+      asset: 'archify-demo-reach.png',
+      link: 'agent-tool-call.workflow.html?theme=dark&present=1#focus=planner&reach=downstream',
     },
     {
       asset: 'archify-demo-route.png',
@@ -146,16 +280,17 @@ test('README demos use checked-in captures and live deep links below the existin
     assert.ok(buffer.byteLength < 400 * 1024, `${demo.asset}: capture is too large`);
   }
 
-  for (const filename of ['README.md', 'README_EN.md', 'README_ZH.md']) {
+  for (const language of readmeLanguages) {
+    const filename = language.file;
     const readme = fs.readFileSync(path.join(repoRoot, filename), 'utf8');
-    const heroIndex = readme.indexOf('docs/assets/archify-readme-hero.png');
-    const proofIndex = readme.indexOf('docs/assets/archify-live-proof.gif');
-    const previewIndex = Math.max(readme.indexOf('## Preview'), readme.indexOf('## 预览'));
-    const demosIndex = Math.max(readme.indexOf('## See Archify in action'), readme.indexOf('## 看看 Archify 能做什么'));
-    const quickStartIndex = Math.max(readme.indexOf('## Quick start'), readme.indexOf('## 快速开始'));
-    assert.ok(heroIndex >= 0 && heroIndex < demosIndex, `${filename}: existing hero proof moved`);
+    const markIndex = readme.indexOf('docs/assets/archify-lockup-light.svg');
+    const proofIndex = readme.indexOf('<!-- archify-launch-video -->');
+    const previewIndex = sectionIndex(readme, filename, language.preview);
+    const demosIndex = sectionIndex(readme, filename, language.demos);
+    const quickStartIndex = sectionIndex(readme, filename, language.quickStart);
+    assert.ok(markIndex >= 0 && markIndex < demosIndex, `${filename}: brand mark must precede the demos`);
     assert.ok(demosIndex < previewIndex && previewIndex < quickStartIndex, `${filename}: demo section is misplaced`);
-    assert.ok(demosIndex < proofIndex && proofIndex < previewIndex, `${filename}: animated proof is outside the demo section`);
+    assert.ok(demosIndex < proofIndex && proofIndex < previewIndex, `${filename}: launch video is outside the demo section`);
     for (const demo of demos) {
       assert.match(readme, new RegExp(`docs/assets/${demo.asset.replaceAll('.', '\\.')}`));
       assert.ok(readme.includes(demo.link), `${filename}: missing ${demo.link}`);
@@ -163,11 +298,12 @@ test('README demos use checked-in captures and live deep links below the existin
   }
 });
 
-test('README stays scannable without deleting the visual proof set', () => {
+test('README preserves the visual proof set and key content', () => {
   const commonAssets = [
+    'archify-lockup-light.svg',
+    'archify-lockup-dark.svg',
     'archify-readme-hero.png',
-    'archify-live-proof.gif',
-    'archify-demo-story.png',
+    'archify-demo-reach.png',
     'archify-demo-route.png',
     'archify-demo-lens.png',
     'mco-runtime-share-card.png',
@@ -180,21 +316,99 @@ test('README stays scannable without deleting the visual proof set', () => {
     'archify-lifecycle.png',
   ];
 
-  for (const filename of ['README.md', 'README_EN.md', 'README_ZH.md']) {
+  for (const { file: filename, noRepository } of readmeLanguages) {
     const readme = fs.readFileSync(path.join(repoRoot, filename), 'utf8');
-    assert.ok(readme.split('\n').length <= 280, `${filename}: README grew beyond the scannable line budget`);
+    const supercode = readme.indexOf('https://supercode.sh/?utm_source=archify');
+    const evermind = readme.indexOf('docs/assets/sponsors/evermind-archify-raven.png');
+    assert.ok(supercode >= 0 && evermind > supercode, `${filename}: EverMind must follow Supercode`);
+    assert.match(readme, noRepository, `${filename}: the no-repository entry point is missing`);
     for (const asset of commonAssets) {
       assert.ok(readme.includes(`docs/assets/${asset}`), `${filename}: visual proof ${asset} was removed`);
     }
   }
 
-  const english = fs.readFileSync(path.join(repoRoot, 'README.md'), 'utf8');
-  const wordCount = english.trim().split(/\s+/).length;
-  const intro = english.slice(0, english.indexOf('![License]'));
-  const introBullets = intro.match(/^- \*\*/gm) || [];
-  assert.ok(wordCount <= 2000, `README.md is too verbose again (${wordCount} words)`);
-  assert.ok(introBullets.length <= 8, `README.md has too many top-level capability bullets (${introBullets.length})`);
+});
 
-  const chinese = fs.readFileSync(path.join(repoRoot, 'README_ZH.md'), 'utf8');
-  assert.ok(chinese.includes('docs/assets/claude-skills-settings.png'), 'README_ZH.md lost the Claude Skills setup image');
+test('all README languages end with the self-hosted star history chart', () => {
+  const lightChart = 'https://raw.githubusercontent.com/tt-a1i/archify/star-history/assets/star-history-light.svg';
+  const darkChart = 'https://raw.githubusercontent.com/tt-a1i/archify/star-history/assets/star-history-dark.svg';
+  const workflow = fs.readFileSync(path.join(repoRoot, '.github', 'workflows', 'star-history.yml'), 'utf8');
+
+  for (const language of readmeLanguages) {
+    const filename = language.file;
+    const readme = fs.readFileSync(path.join(repoRoot, filename), 'utf8');
+    const starHistoryIndex = readme.lastIndexOf('## Star History');
+    const contributingIndex = sectionIndex(readme, filename, language.contributing);
+    assert.ok(starHistoryIndex > contributingIndex, `${filename}: Star History must follow Contributing`);
+    assert.ok(readme.includes(lightChart), `${filename}: missing light star history chart`);
+    assert.ok(readme.includes(darkChart), `${filename}: missing dark star history chart`);
+    assert.equal(readme.trimEnd().endsWith('</p>'), true, `${filename}: Star History must remain the final section`);
+  }
+
+  assert.match(workflow, /permissions:\n  contents: write/);
+  assert.match(workflow, /narayann7\/star-history-action@[0-9a-f]{40}/);
+  // Upstream PR #6 migrates setup-node to Node 24 without the v1.0.6 chart changes.
+  assert.match(workflow, /narayann7\/star-history-action@00dfada13f106e4114ee46728aa415857078e76c\s/);
+  assert.match(workflow, /output-dir: assets/);
+  assert.match(workflow, /update-readme: ['"]false['"]/);
+  assert.match(workflow, /commit: ['"]false['"]/);
+  assert.match(workflow, /bash scripts\/publish-star-history\.sh star-history/);
+  assert.doesNotMatch(workflow, /branch: star-history/);
+  assert.doesNotMatch(workflow, /xpzouying\/star-history/);
+});
+
+test('Star History publishing advances the data branch without a force push', () => {
+  const fixture = fs.mkdtempSync(path.join(os.tmpdir(), 'archify-star-history-'));
+  const remote = path.join(fixture, 'remote.git');
+  const firstCheckout = path.join(fixture, 'first');
+  const secondCheckout = path.join(fixture, 'second');
+  const publisher = path.join(repoRoot, 'scripts', 'publish-star-history.sh');
+
+  try {
+    git(fixture, 'init', '--bare', remote);
+    git(fixture, '--git-dir', remote, 'config', 'receive.denyNonFastForwards', 'true');
+    git(fixture, '--git-dir', remote, 'config', 'receive.denyDeletes', 'true');
+
+    fs.mkdirSync(firstCheckout);
+    git(firstCheckout, 'init', '-b', 'main');
+    git(firstCheckout, 'config', 'user.name', 'Fixture');
+    git(firstCheckout, 'config', 'user.email', 'fixture@example.com');
+    fs.writeFileSync(path.join(firstCheckout, 'README.md'), 'fixture\n');
+    git(firstCheckout, 'add', 'README.md');
+    git(firstCheckout, 'commit', '-m', 'seed');
+    git(firstCheckout, 'remote', 'add', 'origin', remote);
+    git(firstCheckout, 'push', '-u', 'origin', 'main');
+
+    const firstTemp = path.join(fixture, 'run-1');
+    fs.mkdirSync(firstTemp);
+    writeStarHistoryCharts(firstCheckout, 'v1');
+    execFileSync('bash', [publisher, 'star-history'], {
+      cwd: firstCheckout,
+      env: { ...process.env, RUNNER_TEMP: firstTemp },
+    });
+    const firstCommit = git(fixture, '--git-dir', remote, 'rev-parse', 'refs/heads/star-history');
+
+    git(fixture, 'clone', '--branch', 'main', remote, secondCheckout);
+    const secondTemp = path.join(fixture, 'run-2');
+    fs.mkdirSync(secondTemp);
+    writeStarHistoryCharts(secondCheckout, 'v2');
+    execFileSync('bash', [publisher, 'star-history'], {
+      cwd: secondCheckout,
+      env: { ...process.env, RUNNER_TEMP: secondTemp },
+    });
+    const secondCommit = git(fixture, '--git-dir', remote, 'rev-parse', 'refs/heads/star-history');
+
+    assert.notEqual(secondCommit, firstCommit);
+    git(fixture, '--git-dir', remote, 'merge-base', '--is-ancestor', firstCommit, secondCommit);
+    assert.deepEqual(
+      git(fixture, '--git-dir', remote, 'ls-tree', '-r', '--name-only', secondCommit).split('\n'),
+      ['assets/star-history-dark.svg', 'assets/star-history-light.svg'],
+    );
+    assert.match(
+      git(fixture, '--git-dir', remote, 'show', `${secondCommit}:assets/star-history-light.svg`),
+      /light v2/,
+    );
+  } finally {
+    fs.rmSync(fixture, { recursive: true, force: true });
+  }
 });

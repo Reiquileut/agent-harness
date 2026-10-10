@@ -10,8 +10,8 @@ node archify/renderers/sequence/render-sequence.mjs input.sequence.json output.h
 The renderer validates input against `archify/schemas/sequence.schema.json`
 with the bundled standalone validator. No dependency installation is required.
 
-If `output.html` is omitted, the renderer uses `meta.output` from the JSON file
-or falls back to `sequence.html` in the current working directory.
+If `output.html` is omitted, the renderer uses the required `meta.output` value
+from the JSON file.
 
 ## Input
 
@@ -23,7 +23,7 @@ Sequence JSON files must set:
   "diagram_type": "sequence",
   "meta": {
     "title": "Cache Miss Request Sequence",
-    "subtitle": "Frontend request path with auth and cache fallback",
+    "output": "cache-miss-request.html",
     "viewBox": [920, 760]
   },
   "participants": [],
@@ -45,22 +45,54 @@ The schema lives at:
 archify/schemas/sequence.schema.json
 ```
 
+## Legend
+
+The default visual legend derives kinds from `messages[].variant` (omitting
+`variant` means `default`). Supported `meta.legend.entries` keys, in stable
+order, are `emphasis`, `return`, `security`, `dashed`, and `default`. These are
+visual message keys, not Semantic Lens controls; label/visibility overrides do
+not create edge facts.
+
+The legend sits below all timeline content: the last message and its note,
+activation bars, and segment frames, with a 12px gap. Without `meta.viewBox`
+the canvas grows to keep that gap. With an authored `viewBox` that is too short,
+`showcase` fails with the exact height to set, and `standard` hides the implicit
+legend rather than drawing it over content. Lifelines stop above the legend.
+Message labels use their line's color; gray default and return lines keep the
+muted text color.
+
 ## Layout budget
 
 | Constant | Value |
 |----------|-------|
-| viewBox | default `[920, 760]`; schema minimum `[480, 480]` |
-| Participant boxes | 86×54 at y 72; centers at x = 62 + index×108 |
-| Participant count | last center + 43 must be ≤ width − 40 (8 fit at width 920) |
-| Lifelines | from y 142 down to height − 65; band must be ≥120px tall |
+| viewBox | default `[920, 760]`, taller when late content needs legend room; schema minimum `[480, 480]` |
+| Participant boxes | `fixed` (default): 86×54 at y 72; `spread`: viewBox-relative width from 86px up to 190px |
+| Participant columns | `fixed`: centers at x = 62 + index×108; `spread`: columns distribute across the available viewBox width |
+| Participant count | the last box must end at or before width − 40; layouts that cannot fit fail closed |
+| Lifelines | from y 142 down to height − 65 (drawn to just above the legend); band must be ≥120px tall |
 | Message `y` range | `[160, height − 83]` |
 | Message spacing | ≥28px vertical between messages that share horizontal space |
 | Arrow span | ≥60px horizontal between the two participants |
 | Segments | y pixel ranges with `to > from`, inside `[72, lifeline bottom + 20]` |
-| Legend row | y = height − 54 |
+| Legend | last row baseline at height − 54; extra rows wrap upward and stay 12px below the timeline content |
 
 `segments[].from/to` and `activations[].from/to` are y pixel coordinates, not
 participant ids; activations also require `to > from`.
+
+### Column fit
+
+Sequence diagrams use `meta.column_fit: "fixed"` by default so existing
+documents keep their historical coordinates. Use `"spread"` when a wide
+viewBox would otherwise leave empty space on the right or when meaningful
+participant labels do not fit the fixed 86px boxes. Spread derives box width
+and column distance from the viewBox while preserving participant order,
+lifelines, and message semantics.
+
+The artifact checker reports `composition.sequenceColumnSpace` from the rendered
+participants, routes and text. A large unused right-hand region in a fixed layout
+can produce an `inspect-sequence-width` recommendation in `finalize`; it is advice,
+not a new warning or failure. See [Sequence width review](../../references/delivery-contract.md#sequence-width-review)
+for the bounded authoring repair and explicit-fixed/legacy preservation rules.
 
 ## Design Rules
 
@@ -72,7 +104,8 @@ participant ids; activations also require `to > from`.
 - Use `return` for quiet response messages.
 - Use `dashed` for async trace, event, logging, and non-blocking work.
 - Use segments as light background guides; keep segment labels short.
-- Keep labels short enough to fit in narrow previews.
+- Keep labels concise, but try `meta.column_fit: "spread"` before shortening a
+  meaningful participant label just to fit the fixed boxes.
 
 Schema violations exit non-zero with path-prefixed messages annotated with the
 element's id or label. The renderer additionally fails when it can detect

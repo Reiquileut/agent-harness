@@ -14,7 +14,10 @@
   ],
   "properties": {
     "schema_version": {
-      "const": 1
+      "enum": [
+        1,
+        2
+      ]
     },
     "diagram_type": {
       "const": "lifecycle"
@@ -23,41 +26,61 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "title"
+        "title",
+        "output"
       ],
       "properties": {
         "title": {
           "type": "string",
           "minLength": 1
         },
+        "locale": {
+          "$ref": "common.schema.json#/$defs/locale"
+        },
+        "translations": {
+          "$ref": "common.schema.json#/$defs/translations"
+        },
         "subtitle": {
           "type": "string"
         },
         "output": {
-          "type": "string"
+          "$ref": "common.schema.json#/$defs/portableOutputPath"
         },
         "animation": {
-          "enum": [
-            "trace",
-            "none"
-          ]
+          "$ref": "common.schema.json#/$defs/animation"
         },
         "visual_preset": {
-          "enum": [
-            "classic",
-            "signal-flow",
-            "blueprint",
-            "editorial"
-          ]
+          "$ref": "common.schema.json#/$defs/visualPreset"
         },
         "quality_profile": {
-          "enum": [
-            "standard",
-            "showcase"
-          ]
+          "$ref": "common.schema.json#/$defs/qualityProfile"
+        },
+        "repository": {
+          "$ref": "common.schema.json#/$defs/repository"
         },
         "views": {
           "$ref": "common.schema.json#/$defs/guidedViews"
+        },
+        "legend": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "mode": { "$ref": "common.schema.json#/$defs/legendMode" },
+            "entries": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "start": { "$ref": "common.schema.json#/$defs/legendEntry" },
+                "active": { "$ref": "common.schema.json#/$defs/legendEntry" },
+                "waiting": { "$ref": "common.schema.json#/$defs/legendEntry" },
+                "decision": { "$ref": "common.schema.json#/$defs/legendEntry" },
+                "success": { "$ref": "common.schema.json#/$defs/legendEntry" },
+                "failure": { "$ref": "common.schema.json#/$defs/legendEntry" },
+                "neutral": { "$ref": "common.schema.json#/$defs/legendEntry" },
+                "external": { "$ref": "common.schema.json#/$defs/legendEntry" }
+              }
+            }
+          }
         },
         "viewBox": {
           "type": "array",
@@ -68,7 +91,7 @@
             },
             {
               "type": "number",
-              "minimum": 566
+              "minimum": 300
             }
           ],
           "items": false,
@@ -138,6 +161,13 @@
           "tag": {
             "type": "string"
           },
+          "icon": { "$ref": "common.schema.json#/$defs/nodeIcon" },
+          "brand": {
+            "$ref": "common.schema.json#/$defs/brandMark"
+          },
+          "sources": {
+            "$ref": "common.schema.json#/$defs/sourceReferences"
+          },
           "step": {
             "type": "string"
           },
@@ -203,20 +233,10 @@
             ]
           },
           "fromSide": {
-            "enum": [
-              "left",
-              "right",
-              "top",
-              "bottom"
-            ]
+            "$ref": "common.schema.json#/$defs/side"
           },
           "toSide": {
-            "enum": [
-              "left",
-              "right",
-              "top",
-              "bottom"
-            ]
+            "$ref": "common.schema.json#/$defs/side"
           },
           "channelX": {
             "type": "number"
@@ -248,8 +268,7 @@
             }
           },
           "width": {
-            "type": "number",
-            "minimum": 0.5
+            "$ref": "common.schema.json#/$defs/relationshipWidth"
           }
         }
       }

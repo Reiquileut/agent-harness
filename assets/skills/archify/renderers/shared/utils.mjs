@@ -1,8 +1,12 @@
-const ESCAPE_MAP = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+import {
+  escapeHtml as esc,
+  localizeTemplate,
+  resolveLocale,
+  translateMessage,
+  viewerCatalog,
+} from './i18n.mjs';
 
-export function esc(value) {
-  return String(value ?? '').replace(/[&<>"']/g, (c) => ESCAPE_MAP[c]);
-}
+export { esc };
 
 export function renderDefinitions() {
   return `        <!-- Definitions -->
@@ -29,12 +33,13 @@ const SIGIL_TONE = {
   frontend: 'frontend',
   start: 'frontend',
   backend: 'backend',
-  active: 'backend',
+  active: 'frontend',
   database: 'database',
-  success: 'database',
+  success: 'backend',
   cloud: 'cloud',
   waiting: 'cloud',
   security: 'security',
+  decision: 'database',
   failure: 'security',
   messagebus: 'messagebus',
   external: 'external',
@@ -42,6 +47,12 @@ const SIGIL_TONE = {
 };
 
 const SIGIL_SHAPE = {
+  calendar: `<rect x="2" y="3.5" width="12" height="10.5" rx="2"/><path d="M5 2v3M11 2v3M2 7h12M5 10h2M9 10h2"/>`,
+  clock: `<circle cx="8" cy="8" r="6"/><path d="M8 4v4l3 2"/>`,
+  person: `<circle cx="8" cy="4.5" r="2.5"/><path d="M3 14v-2a5 5 0 0 1 10 0v2"/>`,
+  briefcase: `<rect x="2" y="5" width="12" height="9" rx="2"/><path d="M5 5V2h6v3M2 9h12M7 9v2h2V9"/>`,
+  flag: `<path d="M3 14V2h10l-2 3 2 3H3"/>`,
+  moon: `<path d="M13.5 10A6 6 0 0 1 6 2.5 6 6 0 1 0 13.5 10Z"/>`,
   frontend: `<rect x="2" y="3" width="12" height="10" rx="2"/>
             <path d="M2 6.5h12"/>
             <circle cx="4.1" cy="4.8" r=".7" class="sigil-fill"/>
@@ -70,12 +81,24 @@ const SIGIL_SHAPE = {
             <circle cx="8" cy="8" r="1.2" class="sigil-fill"/>`,
 };
 
-// A quiet, renderer-owned role stamp. It is authored SVG content rather than a
+// A quiet, renderer-owned corner symbol (type default or authored icon). It is
+// SVG content rather than a
 // viewer overlay, so it survives canonical export while adding no focus target,
 // accessible name, layout box, or interaction state of its own.
-export function renderSemanticSigil(kind, { x, y, size = 11 } = {}) {
-  const normalized = Object.hasOwn(SIGIL_SHAPE, kind) ? kind : 'neutral';
-  const tone = SIGIL_TONE[normalized] || 'external';
+// Shared with label clearance so the reserved rail matches the actual icon.
+export const SEMANTIC_SIGIL_INSET = 6;
+export const SEMANTIC_SIGIL_SIZE = 11;
+export const SEMANTIC_SIGIL_FOOTPRINT = SEMANTIC_SIGIL_INSET + SEMANTIC_SIGIL_SIZE;
+// The viewer installs a runtime "sources" beacon on the node's top-right
+// rail, just left of the brand mark. Layout must reserve the same footprint
+// so labels never sit under the badge.
+export const SOURCE_BADGE_FOOTPRINT = 38;
+
+export function renderSemanticSigil(kind, { x, y, size = SEMANTIC_SIGIL_SIZE, icon } = {}) {
+  if (icon === 'none') return '';
+  const selected = icon ?? kind;
+  const normalized = Object.hasOwn(SIGIL_SHAPE, selected) ? selected : 'neutral';
+  const tone = SIGIL_TONE[kind] || 'external';
   const scale = size / 16;
   return `<g aria-hidden="true" data-semantic-sigil="${esc(normalized)}" class="semantic-sigil s-${tone}" transform="translate(${x} ${y}) scale(${scale})">
             ${SIGIL_SHAPE[normalized]}
@@ -92,7 +115,7 @@ ${list.map((card) => `      <div class="card">
           <h3>${esc(card.title)}</h3>
         </div>
         <ul>
-${card.items.map((item) => `          <li>&bull; ${esc(item)}</li>`).join('\n')}
+${card.items.map((item) => `          <li>${esc(item)}</li>`).join('\n')}
         </ul>
       </div>`).join('\n\n')}
     </div>`;
@@ -100,26 +123,41 @@ ${card.items.map((item) => `          <li>&bull; ${esc(item)}</li>`).join('\n')}
 
 const SVG_SLOT_RE = /      <!-- ARCHIFY:SVG_SLOT_START -->[\s\S]*?      <!-- ARCHIFY:SVG_SLOT_END -->/;
 const CARDS_SLOT_RE = /    <!-- ARCHIFY:CARDS_SLOT_START -->[\s\S]*?    <!-- ARCHIFY:CARDS_SLOT_END -->/;
-const GUIDED_VIEWS_PLACEHOLDER = '<!-- ARCHIFY:GUIDED_VIEWS_DATA -->';
+const SUBTITLE_SLOT_RE = /^([ \t]*)<p class="subtitle">\[Subtitle description\]<\/p>[ \t]*(\r?\n)?/m;
 const SOURCE_EVIDENCE_PLACEHOLDER = '    <!-- ARCHIFY:SOURCE_EVIDENCE_DATA -->';
+const I18N_PLACEHOLDER = '    <!-- ARCHIFY:I18N_DATA -->';
+
+function serializeScriptJson(value) {
+  return JSON.stringify(value)
+    .replaceAll('<', '\\u003c')
+    .replaceAll('>', '\\u003e')
+    .replaceAll('&', '\\u0026');
+}
 
 const TEMPLATE_PLACEHOLDERS = [
   '<html lang="en" data-theme="dark" data-preset="[VISUAL PRESET]">',
   '<title>[PROJECT NAME] Architecture Diagram</title>',
   '<h1>[PROJECT NAME] Architecture</h1>',
-  '<p class="subtitle">[Subtitle description]</p>',
-  '[Project Name] &bull; [Additional metadata]',
-  GUIDED_VIEWS_PLACEHOLDER,
+  I18N_PLACEHOLDER,
 ];
 
-// `footer` is injected as raw HTML so callers can embed <kbd> hints;
-// pass only trusted strings here, never user input.
-export function applyTemplate(template, { title, subtitle, footer, svg, cards, visualPreset = 'classic', guidedViews = [], sourceEvidence = null }) {
+export function applyTemplate(template, {
+  title,
+  subtitle,
+  svg,
+  cards,
+  locale,
+  visualPreset = 'classic',
+  sourceEvidence = null,
+}) {
   if (!SVG_SLOT_RE.test(template)) {
     throw new Error('applyTemplate: template missing ARCHIFY:SVG_SLOT sentinel');
   }
   if (!CARDS_SLOT_RE.test(template)) {
     throw new Error('applyTemplate: template missing ARCHIFY:CARDS_SLOT sentinel');
+  }
+  if (!SUBTITLE_SLOT_RE.test(template)) {
+    throw new Error('applyTemplate: template missing subtitle placeholder');
   }
   for (const ph of TEMPLATE_PLACEHOLDERS) {
     if (!template.includes(ph)) {
@@ -134,23 +172,23 @@ export function applyTemplate(template, { title, subtitle, footer, svg, cards, v
   }
   // Function replacers: a literal `$&`, `$'`, `$\`` or `$$` in titles, labels,
   // or rendered SVG must not be interpreted as a replacement pattern.
-  const guidedViewsJson = JSON.stringify(guidedViews)
-    .replaceAll('<', '\\u003c')
-    .replaceAll('>', '\\u003e')
-    .replaceAll('&', '\\u0026');
-  const sourceEvidenceJson = JSON.stringify(sourceEvidence)
-    .replaceAll('<', '\\u003c')
-    .replaceAll('>', '\\u003e')
-    .replaceAll('&', '\\u0026');
-  return template
-    .replace(TEMPLATE_PLACEHOLDERS[0], () => `<html lang="en" data-theme="dark" data-preset="${esc(visualPreset)}">`)
-    .replace(TEMPLATE_PLACEHOLDERS[1], () => `<title>${esc(title)} Diagram</title>`)
+  const sourceEvidenceJson = serializeScriptJson(sourceEvidence);
+  const resolvedLocale = resolveLocale(locale);
+  const i18nJson = serializeScriptJson({ locale: resolvedLocale, messages: viewerCatalog(resolvedLocale) });
+  const renderedSubtitle = typeof subtitle === 'string' && subtitle.trim()
+    ? `<p class="subtitle">${esc(subtitle)}</p>`
+    : '';
+  const i18nData = `    <script id="archify-i18n-data" type="application/json">${i18nJson}</script>`;
+  return localizeTemplate(template, resolvedLocale)
+    .replace(I18N_PLACEHOLDER, () => i18nData)
+    .replace(TEMPLATE_PLACEHOLDERS[0], () => `<html lang="${esc(resolvedLocale)}" data-theme="dark" data-preset="${esc(visualPreset)}">`)
+    .replace(TEMPLATE_PLACEHOLDERS[1], () => `<title>${esc(translateMessage(resolvedLocale, 'page.title', { title }))}</title>`)
     .replace(TEMPLATE_PLACEHOLDERS[2], () => `<h1>${esc(title)}</h1>`)
-    .replace(TEMPLATE_PLACEHOLDERS[3], () => `<p class="subtitle">${esc(subtitle ?? '')}</p>`)
+    .replace(SUBTITLE_SLOT_RE, (_match, indent, newline = '') => renderedSubtitle
+      ? `${indent}${renderedSubtitle}${newline}`
+      : '')
     .replace(SVG_SLOT_RE, () => svg)
     .replace(CARDS_SLOT_RE, () => cards)
-    .replace(TEMPLATE_PLACEHOLDERS[4], () => footer)
-    .replace(GUIDED_VIEWS_PLACEHOLDER, () => `<script id="archify-guided-views-data" type="application/json">${guidedViewsJson}</script>`)
     .replace(SOURCE_EVIDENCE_PLACEHOLDER, () => sourceEvidence
       ? `    <script id="archify-source-evidence-data" type="application/json">${sourceEvidenceJson}</script>`
       : '');
@@ -161,10 +199,56 @@ export function applyTemplate(template, { title, subtitle, footer, svg, cards, v
 // forms (notably U+FF61–U+FF9F Katakana) out of this set. The explicit ranges
 // also cover vertical punctuation and supplementary East Asian scripts that
 // literal glyph ranges made difficult to audit.
-const FULLWIDTH_RE = /[\u1100-\u115F\u2329-\u232A\u2E80-\uA4CF\uAC00-\uD7A3\uF900-\uFAFF\uFE10-\uFE19\uFE30-\uFE6F\uFF01-\uFF60\uFFE0-\uFFE6\u{16FE0}-\u{18DFF}\u{1AFF0}-\u{1AFFF}\u{1B000}-\u{1B2FF}\u{1F000}-\u{1FAFF}\u{20000}-\u{3FFFD}]/u;
+// Code points that take two columns of advance width: East Asian Wide and
+// Fullwidth per UAX #11, tracking Unicode 17.0. That takes in the BMP symbols
+// carrying emoji presentation (U+2705, U+2B50, U+26A1, U+231B, ...), which
+// render at the same square advance as the supplementary-plane emoji already
+// listed here, and Hangul Jamo Extended-A. Two boundary calls worth naming:
+// Unicode 16.0 reclassified the trigrams (U+2630-U+2637) and the monogram /
+// digram symbols (U+268A-U+268F) from Neutral to Wide, so both are in; and
+// Hangul Jamo Extended-A stops at U+A97C, its last assigned jamo, because
+// U+A97D-U+A97F are unassigned, and unassigned code points outside the CJK
+// ranges UAX #11 names default to Neutral rather than Wide. Spelled out as
+// ranges because V8 has no \p{East_Asian_Width=W} property escape.
+const FULLWIDTH_RE = /[\u1100-\u115F\u231A-\u231B\u2329-\u232A\u23E9-\u23EC\u23F0\u23F3\u25FD-\u25FE\u2614-\u2615\u2630-\u2637\u2648-\u2653\u267F\u268A-\u268F\u2693\u26A1\u26AA-\u26AB\u26BD-\u26BE\u26C4-\u26C5\u26CE\u26D4\u26EA\u26F2-\u26F3\u26F5\u26FA\u26FD\u2705\u270A-\u270B\u2728\u274C\u274E\u2753-\u2755\u2757\u2795-\u2797\u27B0\u27BF\u2B1B-\u2B1C\u2B50\u2B55\u2E80-\uA4CF\uA960-\uA97C\uAC00-\uD7A3\uF900-\uFAFF\uFE10-\uFE19\uFE30-\uFE6F\uFF01-\uFF60\uFFE0-\uFFE6\u{16FE0}-\u{18DFF}\u{1AFF0}-\u{1AFFF}\u{1B000}-\u{1B2FF}\u{1F000}-\u{1FAFF}\u{20000}-\u{3FFFD}]/u;
+
+// Variation selectors contribute no separate unit. This is a conservative
+// width estimate, not a measurement of the selected glyph: its actual advance
+// depends on the font and presentation (Unicode UAX #11).
+// VS16 requests emoji presentation, so reserve two units for the sequence.
+// VS15 retains the base's width estimate; forcing every text-presentation
+// sequence to one unit undercounts wide bases, including CJK characters whose
+// font ignores that selector. Neutral bases remain one unit. Some selected
+// text glyphs can be narrower than this estimate; prefer extra space to overflow.
+const VARIATION_SELECTOR_FIRST = 0xfe00;
+const VARIATION_SELECTOR_LAST = 0xfe0f;
+const VARIATION_SELECTOR_EMOJI = 0xfe0f;
+
+// Width measurement is pure and the same labels are measured many times per
+// compile, so the unit count is memoized by its input string.
+const TEXT_UNITS_CACHE = new Map();
+const MAX_TEXT_UNITS_CACHE_ENTRIES = 4096;
+const MAX_CACHED_TEXT_LENGTH = 1024;
 
 export function textUnits(text) {
+  const cacheKey = String(text ?? '');
+  const cachedUnits = TEXT_UNITS_CACHE.get(cacheKey);
+  if (cachedUnits !== undefined) return cachedUnits;
+  const chars = Array.from(cacheKey);
   let units = 0;
-  for (const ch of String(text ?? '')) units += FULLWIDTH_RE.test(ch) ? 2 : 1;
+  for (let i = 0; i < chars.length; i += 1) {
+    const codePoint = chars[i].codePointAt(0);
+    if (codePoint >= VARIATION_SELECTOR_FIRST && codePoint <= VARIATION_SELECTOR_LAST) continue;
+    const next = i + 1 < chars.length ? chars[i + 1].codePointAt(0) : -1;
+    if (next === VARIATION_SELECTOR_EMOJI) units += 2;
+    else units += FULLWIDTH_RE.test(chars[i]) ? 2 : 1;
+  }
+  // Keep repeated in-process compiles bounded, including unusually long labels.
+  if (cacheKey.length <= MAX_CACHED_TEXT_LENGTH) {
+    if (TEXT_UNITS_CACHE.size >= MAX_TEXT_UNITS_CACHE_ENTRIES) {
+      TEXT_UNITS_CACHE.delete(TEXT_UNITS_CACHE.keys().next().value);
+    }
+    TEXT_UNITS_CACHE.set(cacheKey, units);
+  }
   return units;
 }

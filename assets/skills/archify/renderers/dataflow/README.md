@@ -10,8 +10,8 @@ node archify/renderers/dataflow/render-dataflow.mjs input.dataflow.json output.h
 The renderer validates input against `archify/schemas/dataflow.schema.json`
 with the bundled standalone validator. No dependency installation is required.
 
-If `output.html` is omitted, the renderer uses `meta.output` from the JSON file
-or falls back to `dataflow.html` in the current working directory.
+If `output.html` is omitted, the renderer uses the required `meta.output` value
+from the JSON file.
 
 ## Input
 
@@ -23,7 +23,7 @@ Data-flow JSON files must set:
   "diagram_type": "dataflow",
   "meta": {
     "title": "Product Analytics Data Flow",
-    "subtitle": "Events, consent, PII isolation, warehouse sync, and consumers",
+    "output": "product-analytics-dataflow.html",
     "viewBox": [940, 720]
   },
   "stages": [],
@@ -41,6 +41,18 @@ The schema lives at:
 ```text
 archify/schemas/dataflow.schema.json
 ```
+
+## Legend
+
+The default visual legend derives kinds from `flows[].variant` (omitting
+`variant` means `default`) and adds `database` only when a database node exists.
+Supported `meta.legend.entries` keys, in stable order, are `emphasis`,
+`security`, `dashed`, `database`, and `default`. Flow variants remain
+visual-only because Archify has no compiled edge-kind facts in this slice. A
+present `database` entry is different: it comes from exact
+`nodes[].type: "database"` facts, so it publishes the normal Semantic Legend
+count, accessible name, and keyboard interaction. Forcing `database` visible
+without a database node keeps it visual-only.
 
 ## Layout budget
 

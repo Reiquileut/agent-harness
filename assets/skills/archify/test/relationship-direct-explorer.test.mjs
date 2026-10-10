@@ -56,7 +56,7 @@ test('one roving target represents each exact stable edge key and authored direc
   assert.match(template, /relationshipHitOverlay\.setAttribute\('role', 'group'\)/);
   assert.match(template, /target\.setAttribute\('aria-describedby', relationshipHelp\.id\)/);
   assert.match(template, /target\.setAttribute\('tabindex', index === 0 \? '0' : '-1'\)/);
-  assert.match(template, /Inspect relationship .* of .*: .* to /);
+  assert.match(template, /viewerText\('viewer\.passport\.relationship\.inspect'/);
   assert.match(template, /relationshipEdgeShapes\(edge\)/);
   assert.match(template, /shape\.cloneNode\(false\)/);
   assert.match(template, /\.relationship-hit-rail \{[\s\S]*stroke: transparent;[\s\S]*stroke-width: 24/);
@@ -77,6 +77,21 @@ test('fine-pointer and keyboard intent preview the exact edge before activation'
   assert.match(template, /\.relationship-hit-target:focus-visible \.relationship-focus-rail/);
 });
 
+test('lifecycle relationship preview hides the non-semantic primary rail', () => {
+  const { result, html } = render('lifecycle', CASES.lifecycle);
+  const svg = canonicalSvg(html);
+  const rail = svg.match(/<path\b[^>]*data-lifecycle-rail[^>]*>/)?.[0] || '';
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.ok(rail, 'lifecycle: expected the primary decorative rail to be identifiable');
+  assert.doesNotMatch(rail, /data-edge-from|data-edge-to/, 'the rail must remain non-semantic');
+  assert.match(
+    html,
+    /svg\[data-relationship-preview-active\] \[data-lifecycle-rail\]\s*\{\s*opacity:\s*0;/,
+    'hovering or focusing an authored relationship must not expose the decorative rail',
+  );
+});
+
 test('activation opens the existing source passport and pins its exact relationship row', () => {
   assert.match(template, /function inspectRelationship\(key, options\)/);
   assert.match(template, /if \(directPreviewTimer\) window\.clearTimeout\(directPreviewTimer\)/);
@@ -88,7 +103,7 @@ test('activation opens the existing source passport and pins its exact relations
   assert.match(template, /data-relationship-pin-active/);
   assert.match(template, /function clearRelationshipPreview\(options\)/);
   assert.match(template, /clearRelationshipPreview\(\{ clearPin: true \}\)/);
-  assert.match(template, /copyBtn\.textContent = 'Copy node'/);
+  assert.match(template, /copyBtn\.textContent = viewerText\('viewer\.passport\.copyNode'\)/);
   assert.match(template, /previewRelationship\(row\)/);
   assert.match(template, /inspectRelationship: inspectRelationship/);
   assert.match(template, /event\.key !== 'ArrowRight'/);
@@ -100,7 +115,6 @@ test('activation opens the existing source passport and pins its exact relations
 
 test('direct relationship targets support one-tap touch, yield to stronger states, and stay export-clean', () => {
   assert.match(template, /html\.getAttribute\('data-embed'\) === 'true'/);
-  assert.match(template, /svg\.hasAttribute\('data-story-active'\)/);
   assert.match(template, /svg\.hasAttribute\('data-route-active'\)/);
   assert.match(template, /svg\.hasAttribute\('data-lens-active'\)/);
   assert.match(template, /event\.target\.closest\('\[data-relationship-hit-key\]'\)/);

@@ -36,7 +36,7 @@ function canonicalSvg(html) {
 test('all five renderers inherit one active-reach-only Reach Share Card item', () => {
   for (const [mode, example] of Object.entries(CASES)) {
     const html = render(mode, example);
-    assert.match(html, /data-action="reach-share-card"[^>]*hidden disabled[^>]*>Reach Share Card[\s\S]*?1200(?:&times;|×)630 PNG/, mode);
+    assert.match(html, /data-action="reach-share-card"[^>]*hidden disabled[^>]*>[\s\S]*?Reach Share Card[\s\S]*?1200(?:&times;|×)630 PNG/, mode);
     assert.match(html, /function syncReachShareItem\(\)/, mode);
     assert.match(html, /reachShareItem\.hidden = !snapshot;/, mode);
     assert.match(html, /reachShareItem\.disabled = !snapshot;/, mode);
@@ -93,8 +93,8 @@ test('Reach variant decorates only a finite canonical clone with static authored
 
 test('Reach styling preserves context, direction, and Blueprint restraint without motion', () => {
   const html = render('dataflow', CASES.dataflow);
-  assert.match(html, /svg\[data-share-reach\] \[data-node-id\], svg\[data-share-reach\] \[data-edge-from\] \{ opacity: 0\.14; \}/);
-  assert.match(html, /svg\[data-share-reach\] \[data-share-reach-match\] \{ opacity: 1; \}/);
+  assert.match(html, /svg\[data-share-reach\] \[data-node-id\], svg\[data-share-reach\] \[data-edge-from\], svg\[data-share-reach\] \[data-graph-role=\\?"automatic-crossover-underlay\\?"\] \{ opacity: 0\.14; \}/);
+  assert.match(html, /svg\[data-share-reach\] \[data-share-reach-match\], svg\[data-share-reach\] \[data-graph-role=\\?"automatic-crossover\\?"\]:has\(> \[data-share-reach-match\]\) > \[data-graph-role=\\?"automatic-crossover-underlay\\?"\] \{ opacity: 1; \}/);
   assert.match(html, /data-share-reach=\\?"upstream\\?"[\s\S]*?--database-stroke/);
   assert.match(html, /data-share-reach=\\?"downstream\\?"[\s\S]*?--backend-stroke/);
   assert.match(html, /data-preset=\\?"blueprint\\?"\]\[data-share-reach\][\s\S]*?filter: none/);
@@ -108,7 +108,9 @@ test('Reach Share Card reuses the 1200x630 seam and publishes a truthful scoped 
   assert.match(html, /Archify\.focus\.reachabilitySnapshot\(\)/);
   assert.match(html, /renderShareCard\(\{ reachSnapshot: snapshot \}\)/);
   assert.doesNotMatch(html, /function rasterizeReachShareCard|reachShareCard:/);
-  assert.match(html, /'Authored ' \+ reachSnapshot\.direction \+ ' from ' \+ reachSnapshot\.origin\.label/);
+  assert.match(html, /viewerText\('viewer\.export\.card\.reachSummary'/);
+  assert.match(html, /direction: directionLabel/);
+  assert.match(html, /origin: reachSnapshot\.origin\.label/);
   assert.match(html, /reachSnapshot\.nodeIds\.length - 1/);
   assert.match(html, /reachSnapshot\.edges\.length/);
   assert.match(html, /reachSnapshot\.maxDepth/);
@@ -120,14 +122,14 @@ test('Reach Share Card reuses the 1200x630 seam and publishes a truthful scoped 
 });
 
 test('Skill, product docs, and READMEs keep the optional truthful boundary explicit', () => {
-  const skill = fs.readFileSync(path.join(skillRoot, 'SKILL.md'), 'utf8');
-  assert.match(skill, /Export → Reach Share Card/);
-  assert.match(skill, /variant=reach/);
-  assert.match(skill, /data-share-reach-\*/);
-  assert.match(skill, /authored reachability/i);
-  assert.match(skill, /download-only/i);
+  const viewer = fs.readFileSync(path.join(skillRoot, 'references', 'viewer-runtime.md'), 'utf8');
+  assert.match(viewer, /Export → Reach Share Card/);
+  assert.match(viewer, /variant=reach/);
+  assert.match(viewer, /data-share-reach-\*/);
+  assert.match(viewer, /authored reachability/i);
+  assert.match(viewer, /download-only/i);
 
-  for (const readme of ['README.md', 'README_EN.md', 'README_ZH.md']) {
+  for (const readme of ['README.md', 'README_EN.md', 'README_ZH.md', 'README_JA.md']) {
     const text = fs.readFileSync(path.join(repoRoot, readme), 'utf8');
     assert.match(text, /Reach Share Card/, readme);
     assert.match(text, /docs\/assets\/mco-runtime-reach-share-card\.png/, readme);

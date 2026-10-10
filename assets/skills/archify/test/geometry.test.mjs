@@ -13,6 +13,8 @@ import {
   segmentRectClearance,
   segmentRectIntersectionLength,
   collectLabelRouteClearance,
+  minimumLabelRouteClearance,
+  cleanEndpointSideProblems,
   cleanFlowProblems,
   cleanCrossingProblems,
   collectAmbiguousCorridors,
@@ -25,18 +27,75 @@ import {
   asArray,
   isFinitePoint,
   anchor,
+  automaticPortRhythmBridge,
   defaultFromSide,
   defaultToSide,
   chosenSide,
+  routeHonorsEndpointSides,
   polylinePath,
   roundedPath,
   labelPoint,
   suggestLabelObstacleFix,
   suggestComponentSeparation,
+  cleanLabelCanvasContainmentProblems,
 } from '../renderers/shared/geometry.mjs';
 import { textUnits, applyTemplate, renderSemanticSigil } from '../renderers/shared/utils.mjs';
 
 const rect = (x, y, w, h) => ({ x, y, width: w, height: h, cx: x + w / 2, cy: y + h / 2 });
+
+test('automaticPortRhythmBridge: near parallel ports use readable outside runs', () => {
+  const points = automaticPortRhythmBridge(
+    [742, 300],
+    [735, 180],
+    'top',
+    'bottom',
+  );
+
+  assert.deepEqual(points, [
+    [742, 300],
+    [742, 276],
+    [758, 276],
+    [758, 204],
+    [735, 204],
+    [735, 180],
+  ]);
+  assert.deepEqual(collectRouteRhythmIssues({
+    routedRelations: [{ relation: { id: 'read' }, points }],
+  }), []);
+});
+
+test('automaticPortRhythmBridge: opposed facing ports shrink only the rejected 24px stubs', () => {
+  const points = automaticPortRhythmBridge(
+    [430, 321],
+    [490, 335],
+    'right',
+    'left',
+  );
+
+  assert.deepEqual(points, [
+    [430, 321],
+    [452, 321],
+    [452, 351],
+    [468, 351],
+    [468, 335],
+    [490, 335],
+  ]);
+  assert.deepEqual(collectRouteRhythmIssues({
+    routedRelations: [{ relation: { id: 'opposed-facing' }, points }],
+  }), []);
+});
+
+test('automaticPortRhythmBridge: accepts no route when the collision callback rejects each candidate', () => {
+  const points = automaticPortRhythmBridge(
+    [430, 321],
+    [490, 335],
+    'right',
+    'left',
+    { accept: () => false },
+  );
+
+  assert.equal(points, null);
+});
 
 test('rectsOverlap: separated rects do not overlap', () => {
   assert.equal(rectsOverlap(rect(0, 0, 10, 10), rect(20, 0, 10, 10)), false);
@@ -57,11 +116,52 @@ test('rectsOverlap: positive gap flags rects within that gap as too close', () =
   assert.equal(rectsOverlap(rect(0, 0, 10, 10), rect(17, 0, 10, 10), 8), true);
 });
 
+test('rectsOverlap: a clearance the solver measured short of by one ulp is met (#583)', () => {
+  // The column solver separates neighbouring centers by width/2 + gap + width/2,
+  // and the clearance check re-derives the same distance from the left node's x
+  // and width. Centers 873.6 and 1041.6 are 167.99999999999988631 apart, so the
+  // check's sum lands 1.14e-13px past the node it was built to clear.
+  const left = rect(873.6 - 80, 93, 160, 52);
+  const right = rect(1041.6 - 80, 93, 160, 52);
+  assert.ok(
+    left.x + left.width + 8 > right.x,
+    'the reproduction must reach the check as a float shortfall, not as a clean gap',
+  );
+  assert.equal(rectsOverlap(left, right, 8), false);
+  assert.equal(rectsOverlap(right, left, 8), false, 'the swapped pair must agree');
+  // The same float error appears down a column, so all four separations need it.
+  const above = rect(93, 873.6 - 80, 52, 160);
+  const below = rect(93, 1041.6 - 80, 52, 160);
+  assert.ok(above.y + above.height + 8 > below.y);
+  assert.equal(rectsOverlap(above, below, 8), false);
+  assert.equal(rectsOverlap(below, above, 8), false);
+});
+
+test('rectsOverlap: the numeric tolerance stays far below a repairable shortfall', () => {
+  // The tolerance covers float error, not a shortfall an author could act on:
+  // 0.001px under the minimum still reports, so widening it tenfold breaks here.
+  assert.equal(rectsOverlap(rect(0, 0, 160, 52), rect(167.999, 0, 160, 52), 8), true);
+  assert.equal(rectsOverlap(rect(0, 0, 160, 52), rect(167.9, 0, 160, 52), 8), true);
+  assert.equal(rectsOverlap(rect(0, 0, 160, 52), rect(168, 0, 160, 52), 8), false);
+});
+
 test('rectsOverlap: negative gap shrinks the hit box (label-collision convention)', () => {
   // gap -2 means rects must overlap by MORE than 2px to count — a 1px sliver
   // does not. This is the sign convention the label checks rely on.
   assert.equal(rectsOverlap(rect(0, 0, 10, 10), rect(9, 0, 10, 10), -2), false);
   assert.equal(rectsOverlap(rect(0, 0, 10, 10), rect(7, 0, 10, 10), -2), true);
+});
+
+test('rectsOverlap: non-finite geometry is not an overlap', () => {
+  // A component authored without pos lands here as NaN. Every comparison in the
+  // negated form is false for NaN, so the unguarded version reported a collision
+  // for every pair and buried the real "must include pos" diagnostic.
+  const nan = rect(Number.NaN, Number.NaN, 120, 60);
+  assert.equal(rectsOverlap(nan, nan, 8), false);
+  assert.equal(rectsOverlap(nan, rect(0, 0, 10, 10), 8), false);
+  assert.equal(rectsOverlap(rect(0, 0, 10, 10), nan, 8), false);
+  assert.equal(rectsOverlap(rect(0, 0, 10, 10), rect(20, 0, Number.NaN, 10)), false);
+  assert.equal(rectsOverlap(rect(0, 0, 10, 10), rect(5, 5, 10, Number.POSITIVE_INFINITY)), false);
 });
 
 test('segmentIntersectsRect: detects an edge crossing a node box', () => {
@@ -100,6 +200,14 @@ test('label-route clearance locks tangent, sub-threshold, boundary, and reversed
   }
 });
 
+test('near-zero segments preserve the existing label clearance threshold', () => {
+  const q = 100 - 3.999899999 / Math.sqrt(2);
+  const segment = { start: [q - 0.0001, q + 0.0001], end: [q + 0.0001, q - 0.0001] };
+  const box = rect(100, 100, 20, 20);
+  assert.ok(segmentRectClearance(segment, box) + 0.0001 >= 4);
+  assert.ok(segmentRectClearance({ start: segment.end, end: segment.start }, box) + 0.0001 >= 4);
+});
+
 test('collectLabelRouteClearance exempts only the owning relationship at an exact threshold', () => {
   const owner = { id: 'owner', from: 'a', to: 'b' };
   const sharedSource = { id: 'other', from: 'a', to: 'c' };
@@ -113,6 +221,129 @@ test('collectLabelRouteClearance exempts only the owning relationship at an exac
   assert.equal(hits.length, 1);
   assert.equal(hits[0].clearance, 2);
   assert.equal(hits[0].otherRelation, sharedSource);
+});
+
+test('minimumLabelRouteClearance handles receipt sets above the argument limit', () => {
+  const measurements = Array.from(
+    { length: 200_000 },
+    (_, index) => ({ clearance: index === 199_999 ? 1.24 : 9.87 }),
+  );
+  assert.equal(minimumLabelRouteClearance(measurements), 1.2);
+  assert.equal(minimumLabelRouteClearance([]), null);
+});
+
+test('collectLabelRouteClearance indexes sparse routes without changing hit order', () => {
+  const owner = { id: 'owner', from: 'owner-a', to: 'owner-b' };
+  const routes = Array.from({ length: 500 }, (_, index) => ({
+    relation: { id: `route-${index}`, from: `a-${index}`, to: `b-${index}` },
+    relationIndex: index + 1,
+    points: [[0, index * 256], [100, index * 256]],
+  }));
+  const nearFirst = { relation: routes[12].relation, relationIndex: 13, points: [[0, 101], [100, 101]] };
+  const nearSecond = { relation: routes[4].relation, relationIndex: 5, points: [[0, 103], [100, 103]] };
+  routes[12] = nearFirst;
+  routes[4] = nearSecond;
+  const labels = [{ relation: owner, relationIndex: 0, label: 'indexed', ...rect(20, 100, 20, 1) }];
+
+  const hits = collectLabelRouteClearance({ labels, routedRelations: routes, threshold: 4 });
+  assert.deepEqual(hits.map((hit) => hit.otherRelationIndex), [5, 13]);
+  assert.deepEqual(hits.map((hit) => hit.clearance), [2, 0]);
+});
+
+test('collectLabelRouteClearance keeps very long routes in the global candidate set', () => {
+  const owner = { id: 'owner', from: 'a', to: 'b' };
+  const long = { id: 'long', from: 'c', to: 'd' };
+  const hits = collectLabelRouteClearance({
+    labels: [{ relation: owner, relationIndex: 0, label: 'long route', ...rect(50000, 10, 20, 10) }],
+    routedRelations: [{ relation: long, relationIndex: 1, points: [[0, 15], [100000, 15]] }],
+    threshold: 4,
+  });
+  assert.equal(hits.length, 1);
+  assert.equal(hits[0].otherRelation, long);
+  assert.equal(hits[0].clearance, 0);
+});
+
+test('collectLabelRouteClearance falls back for unsafe finite grid coordinates', () => {
+  const owner = { id: 'owner', from: 'a', to: 'b' };
+  const unsafe = { id: 'unsafe', from: 'c', to: 'd' };
+  const hits = collectLabelRouteClearance({
+    labels: [{ relation: owner, relationIndex: 0, label: 'unsafe coordinate', ...rect(1e20, 1e20, 1e7, 1e7) }],
+    routedRelations: [{ relation: unsafe, relationIndex: 1, points: [[1e20 - 1e8, 1e20 + 5e6], [1e20 + 1e8, 1e20 + 5e6]] }],
+    threshold: 4,
+  });
+  assert.equal(hits.length, 1);
+  assert.equal(hits[0].otherRelation, unsafe);
+  assert.equal(hits[0].clearance, 0);
+});
+
+test('collectLabelRouteClearance falls back when threshold query is unselective', () => {
+  const owner = { id: 'owner', from: 'a', to: 'b' };
+  const other = { id: 'other', from: 'c', to: 'd' };
+  const hits = collectLabelRouteClearance({
+    labels: [{ relation: owner, relationIndex: 0, label: 'wide threshold', ...rect(100, 100, 10, 10) }],
+    routedRelations: [{ relation: other, relationIndex: 1, points: [[0, 105], [200, 105]] }],
+    threshold: 1e9,
+  });
+  assert.equal(hits.length, 1);
+  assert.equal(hits[0].otherRelation, other);
+  assert.equal(hits[0].clearance, 0);
+});
+
+test('collectLabelRouteClearance stays bounded for thousands of sparse routes', () => {
+  const count = 3000;
+  const routedRelations = Array.from({ length: count }, (_, index) => ({
+    relation: { id: `route-${index}`, from: `a-${index}`, to: `b-${index}` },
+    relationIndex: index,
+    points: [[0, index * 20], [100, index * 20]],
+  }));
+  const labels = routedRelations.map((route, index) => ({
+    relation: route.relation,
+    relationIndex: index,
+    label: `label-${index}`,
+    ...rect(20, index * 20 - 2, 20, 4),
+  }));
+  const started = performance.now();
+  const hits = collectLabelRouteClearance({ labels, routedRelations, threshold: 2 });
+  const elapsed = performance.now() - started;
+
+  assert.deepEqual(hits, []);
+  assert.ok(elapsed < 1500, `expected sparse clearance scan under 1500ms, received ${elapsed.toFixed(1)}ms`);
+});
+
+test('endpoint-side direction distinguishes perpendicular entry from a tangent border run', () => {
+  const clean = [[350, 160], [350, 200], [150, 200], [150, 240]];
+  const tangent = [[350, 160], [350, 200], [100, 200], [100, 240], [150, 240]];
+  assert.equal(routeHonorsEndpointSides(clean, 'bottom', 'top'), true);
+  assert.equal(routeHonorsEndpointSides(tangent, 'bottom', 'top'), false);
+
+  const relation = { id: 'tasks-file', from: 'cli-agents', to: 'tasks-watch', fromSide: 'bottom', toSide: 'top' };
+  const problems = cleanEndpointSideProblems({
+    relations: [relation],
+    endpointIds: new Set(['cli-agents', 'tasks-watch']),
+    pathFor: () => ({ points: tangent }),
+    diagramType: 'architecture',
+    relationCollection: 'connections',
+  });
+  assert.equal(problems.length, 1);
+  assert.match(problems[0], /\[clean-flow\/endpoint-side-direction\] architecture connections\[0\] id "tasks-file"/);
+  assert.match(problems[0], /final segment 3 \[100, 240\] -> \[150, 240\]/);
+  assert.match(problems[0], /toSide "top".*vertical downward from above/);
+});
+
+test('endpoint-side direction can fail closed on renderer-inferred automatic sides', () => {
+  const relation = { id: 'terminal-return', from: 'stream-hub', to: 'workspace' };
+  const problems = cleanEndpointSideProblems({
+    relations: [relation],
+    endpointIds: new Set(['stream-hub', 'workspace']),
+    pathFor: () => ({ points: [[700, 130], [700, 230], [160, 230], [160, 330]] }),
+    diagramType: 'architecture',
+    relationCollection: 'connections',
+    fromSideFor: () => 'left',
+    toSideFor: () => 'right',
+  });
+  assert.equal(problems.length, 2);
+  assert.match(problems[0], /inferred fromSide "left"/);
+  assert.match(problems[1], /inferred toSide "right"/);
 });
 
 test('cleanFlowProblems reports collection index, ids, segment, clearance, and fix', () => {
@@ -145,8 +376,7 @@ test('cleanFlowProblems exempts endpoints and ignores missing endpoint geometry'
     pathFor: () => ({ points: [[20, 10], [80, 10]] }),
     diagramType: 'workflow',
     relationCollection: 'edges',
-    obstacleKind: 'node',
-    profile: 'standard'
+    obstacleKind: 'node'
   });
   assert.deepEqual(endpointOnly, []);
 
@@ -175,8 +405,7 @@ test('cleanFlowProblems uses clearance, reports the first segment, and deduplica
     pathFor: () => ({ points: [[0, -1], [20, -1], [0, 5], [20, 5]] }),
     diagramType: 'workflow',
     relationCollection: 'edges',
-    obstacleKind: 'node',
-    profile: 'standard'
+    obstacleKind: 'node'
   });
   assert.equal(problems.length, 1);
   assert.match(problems[0], /segment 0 \[0, -1\] -> \[20, -1\]/);
@@ -205,6 +434,30 @@ test('cleanCrossingProblems reports one deterministic proper X in showcase', () 
   assert.match(problems[0], /move a via point/);
 });
 
+test('crossing repair advice distinguishes automatic routes from optional authored controls', () => {
+  const first = { from: 'a', to: 'b' };
+  const second = { from: 'c', to: 'd' };
+  const options = {
+    relations: [first, second],
+    endpointIds: new Set(['a', 'b', 'c', 'd']),
+    pathFor: (relation) => ({ points: relation === first
+      ? [[0, 50], [100, 50]] : [[50, 0], [50, 100]] }),
+    diagramType: 'architecture', relationCollection: 'connections', profile: 'showcase',
+    routeHint: 'move the nodes into separate corridors',
+  };
+  const automatic = cleanCrossingProblems(options);
+  assert.equal(automatic.length, 1);
+  assert.doesNotMatch(automatic[0], /remove|authored/);
+  second.via = [[50, 25]];
+  second.labelDx = 3;
+  const before = structuredClone(options.relations);
+  const authored = cleanCrossingProblems(options);
+  assert.equal(authored.length, 1);
+  assert.match(authored[0], /authored via\/labelDx are not required by the user/);
+  assert.match(authored[0], /otherwise preserve that intent and move the nodes/);
+  assert.deepEqual(options.relations, before, 'diagnostics must not change authored geometry');
+});
+
 test('cleanCrossingProblems keeps proper X as non-blocking in standard', () => {
   const relations = [{ from: 'a', to: 'b' }, { from: 'c', to: 'd' }];
   const routes = [[[0, 50], [100, 50]], [[50, 0], [50, 100]]];
@@ -231,6 +484,25 @@ test('cleanCrossingProblems exempts shared endpoints', () => {
     profile: 'showcase',
   });
   assert.deepEqual(problems, []);
+});
+
+test('cleanCrossingProblems selectively checks automatic shared-endpoint interior crossings', () => {
+  const relations = [{ from: 'a', to: 'hub', automatic: true }, { from: 'b', to: 'hub', automatic: true }];
+  const paths = [
+    [[20, 20], [80, 20], [80, 80], [140, 80]],
+    [[20, 100], [120, 100], [120, 40], [140, 40]],
+  ];
+  const options = {
+    relations,
+    endpointIds: new Set(['a', 'b', 'hub']),
+    pathFor: (relation) => ({ points: paths[relations.indexOf(relation)] }),
+    diagramType: 'workflow', relationCollection: 'edges', profile: 'showcase',
+    includeSharedEndpoints: (left, right) => left.automatic && right.automatic,
+  };
+  assert.equal(cleanCrossingProblems(options).length, 1);
+  assert.deepEqual(cleanCrossingProblems({ ...options, profile: 'standard' }), []);
+  relations[1].automatic = false;
+  assert.deepEqual(cleanCrossingProblems(options), [], 'one authored route preserves the legacy exemption');
 });
 
 test('cleanCrossingProblems exempts endpoint touches and collinear corridors', () => {
@@ -298,6 +570,36 @@ test('ambiguous corridor gate exempts shared endpoints, point touches, and overl
     { relation: { from: 'h', to: 'i' }, relationIndex: 4, points: [[98, 60], [110, 60]] },
   ];
   assert.deepEqual(collectAmbiguousCorridors({ routedRelations }), []);
+});
+
+test('shared-endpoint counterflow opt-in detects reverse trunks while preserving same-direction branches', () => {
+  const first = { from: 'a', to: 'hub', automatic: true };
+  const second = { from: 'hub', to: 'b', automatic: true };
+  const paths = [ [[60, 20], [60, 100]], [[60, 100], [60, 49], [140, 49]] ];
+  const options = {
+    routedRelations: [first, second].map((relation, index) => ({ relation, points: paths[index] })),
+    includeSharedEndpointCounterflow: (left, right) => left.automatic && right.automatic,
+  };
+  const hits = collectAmbiguousCorridors(options);
+  assert.equal(hits.length, 1);
+  assert.equal(hits[0].overlapLength, 51);
+  assert.deepEqual(hits[0].overlapStart, [60, 49]);
+  assert.deepEqual(hits[0].overlapEnd, [60, 100]);
+  assert.equal(cleanAmbiguousCorridorProblems({
+    relations: [first, second], endpointIds: new Set(['a', 'hub', 'b']),
+    pathFor: (relation) => ({ points: paths[relation === first ? 0 : 1] }),
+    diagramType: 'workflow', relationCollection: 'edges', profile: 'showcase',
+    includeSharedEndpointCounterflow: options.includeSharedEndpointCounterflow,
+  }).length, 1, 'compiler wrapper forwards the selective policy');
+  second.automatic = false;
+  assert.deepEqual(collectAmbiguousCorridors(options), [], 'mixed automatic and authored routes retain compatibility');
+  second.automatic = true;
+  options.routedRelations[1].points = [[60, 49], [60, 100], [140, 100]];
+  assert.deepEqual(collectAmbiguousCorridors(options), [], 'same-direction trunks are permitted');
+  assert.equal(collectAmbiguousCorridors({ ...options, includeSharedEndpoints: () => true }).length, 1,
+    'existing independent-port policy remains stricter');
+  options.routedRelations[1].points = [[60, 100], [60, 93], [140, 93]];
+  assert.deepEqual(collectAmbiguousCorridors(options), [], 'less than 8px remains below the overlap floor');
 });
 
 test('ambiguous corridor gate keeps standard renderable', () => {
@@ -460,6 +762,37 @@ test('defaultFromSide / defaultToSide are mirror pairs', () => {
   assert.equal(defaultToSide(a, below), 'top');
 });
 
+test('defaultFromSide / defaultToSide follow the dominant axis, not any horizontal delta', () => {
+  // A hub above an offset spoke: the centres differ horizontally, but the
+  // vertical delta dominates, so the router draws the vertical dogleg and the
+  // inferred sides must be bottom/top (issue #376). Every mirror pair is
+  // asserted together so a regression cannot silently flip one endpoint.
+  const hub = { cx: 288, cy: 66 };
+  const spoke = { cx: 124, cy: 266 }; // dx = -164, dy = +200
+  assert.equal(defaultFromSide(hub, spoke), 'bottom');
+  assert.equal(defaultToSide(hub, spoke), 'top');
+
+  const spokeToHub = { from: spoke, to: hub };
+  assert.equal(defaultFromSide(spokeToHub.from, spokeToHub.to), 'top');
+  assert.equal(defaultToSide(spokeToHub.from, spokeToHub.to), 'bottom');
+
+  // Equal deltas keep the horizontal side (previous behaviour preserved).
+  const diagonal = { cx: 100, cy: 100 };
+  assert.equal(defaultFromSide({ cx: 0, cy: 0 }, diagonal), 'right');
+  assert.equal(defaultToSide({ cx: 0, cy: 0 }, diagonal), 'left');
+
+  // A pure vertical delta must still resolve vertically, never to a side.
+  assert.equal(defaultFromSide({ cx: 50, cy: 0 }, { cx: 50, cy: 100 }), 'bottom');
+  assert.equal(defaultToSide({ cx: 50, cy: 0 }, { cx: 50, cy: 100 }), 'top');
+  assert.equal(defaultFromSide({ cx: 50, cy: 0 }, { cx: 50, cy: -100 }), 'top');
+  assert.equal(defaultToSide({ cx: 50, cy: 0 }, { cx: 50, cy: -100 }), 'bottom');
+
+  // Coincident centres stay on the vertical fallback (top/bottom), matching
+  // the pre-existing dx === 0 / dy === 0 behaviour.
+  assert.equal(defaultFromSide({ cx: 7, cy: 7 }, { cx: 7, cy: 7 }), 'top');
+  assert.equal(defaultToSide({ cx: 7, cy: 7 }, { cx: 7, cy: 7 }), 'bottom');
+});
+
 test('chosenSide treats explicit "auto" as "use the geometric fallback"', () => {
   assert.equal(chosenSide('left', 'right'), 'left');
   assert.equal(chosenSide('auto', 'right'), 'right');
@@ -523,6 +856,79 @@ test('textUnits follows wide and halfwidth East Asian presentation boundaries', 
   assert.equal(textUnits('ㄱ'), 2); // Hangul compatibility letter is wide
   assert.equal(textUnits('︐︙'), 4); // vertical punctuation forms are wide
   assert.equal(textUnits('ｶﾀｶﾅ'), 4); // halfwidth Katakana stays one unit per glyph
+  assert.equal(textUnits('ꥠ'), 2); // Hangul Jamo Extended-A is wide
+});
+
+test('textUnits counts emoji-presentation symbols in the BMP as wide', () => {
+  // These render at the same square advance as the supplementary-plane emoji,
+  // so counting them as one unit under-measures a label and lets it overflow
+  // its node while the layout receipt still reads clean.
+  assert.equal(textUnits('✅'), 2);
+  assert.equal(textUnits('⭐'), 2);
+  assert.equal(textUnits('⚡'), 2);
+  assert.equal(textUnits('⌛'), 2);
+  assert.equal(textUnits('⏰'), 2);
+  assert.equal(textUnits('⛔'), 2);
+  assert.equal(textUnits('❗'), 2);
+  assert.equal(textUnits('⬛'), 2);
+  assert.equal(textUnits('☕'), 2);
+  assert.equal(textUnits('♿'), 2);
+  assert.equal(textUnits('✅ Done'), 7);
+  // Narrow and ambiguous neighbours in the same blocks stay one unit.
+  assert.equal(textUnits('→'), 1); // rightwards arrow
+  assert.equal(textUnits('☎'), 1); // black telephone
+  assert.equal(textUnits('①'), 1); // circled digit one
+  // Unicode 16.0 moved these from Neutral to Wide.
+  assert.equal(textUnits('☰'), 2); // trigram for heaven
+  assert.equal(textUnits('☷'), 2); // trigram for earth
+  assert.equal(textUnits('⚊'), 2); // monogram for yang
+  assert.equal(textUnits('⚏'), 2); // digram for greater yin
+  // Hangul Jamo Extended-A stops at its last assigned jamo; the unassigned
+  // tail of the block defaults to Neutral.
+  assert.equal(textUnits('ꥼ'), 2);
+  assert.equal(textUnits('꥽'), 1);
+});
+
+test('textUnits estimates variation-selector sequences without counting selectors separately', () => {
+  // VS16 asks for emoji presentation: the pair renders as one square, so it
+  // must stay two units even though the base is now counted wide on its own.
+  assert.equal(textUnits('⭐️'), 2); // star
+  assert.equal(textUnits('✅️'), 2); // check mark button
+  assert.equal(textUnits('☕️'), 2); // hot beverage
+  assert.equal(textUnits('⚡️'), 2); // high voltage
+  // Same rule the other way: a narrow base forced to emoji presentation
+  // renders as a square and is two units, not one.
+  assert.equal(textUnits('✈️'), 2); // airplane
+  assert.equal(textUnits('❤️'), 2); // red heart
+  // VS15 retains the base width estimate; actual font advances may differ.
+  assert.equal(textUnits('✈︎'), 1); // airplane: U+2708 is Neutral
+  assert.equal(textUnits('⭐︎'), 2); // star: U+2B50 is Wide
+  // The selector never adds width of its own, alone or in a run.
+  assert.equal(textUnits('️'), 0);
+  assert.equal(textUnits('✅️ Done'), 7);
+  assert.equal(textUnits('⭐️⭐️'), 4);
+});
+
+test('textUnits keeps a Wide base wide when VS15 asks for text presentation', () => {
+  // Regression: VS15 was read as "renders narrow" and applied to the sequence
+  // rather than to the base, so every Wide base it followed was measured at
+  // half its estimated width. In particular, a CJK font may ignore VS15,
+  // leaving a wide glyph that the former one-unit estimate undercounted.
+  for (const base of ['⭐', '❗', '⛔', '⚓', '⚡', '✅', '⭕', '㊙', '〽', '中']) {
+    assert.equal(textUnits(base + '︎'), textUnits(base), `VS15 changed the width of ${JSON.stringify(base)}`);
+    assert.equal(textUnits(base + '︎'), 2);
+  }
+  // Neutral bases are unaffected: they were already worth one unit.
+  for (const base of ['✈', '™', '☀', '☎']) {
+    assert.equal(textUnits(base + '︎'), 1);
+  }
+  // VS16 still forces the square emoji advance, whatever the base is worth.
+  assert.equal(textUnits('✈️'), 2);
+  assert.equal(textUnits('⭐️'), 2);
+  // A run of Wide bases carrying VS15 measures the same as the run without it.
+  const run = '⭐❗⛔⚓⚡';
+  assert.equal(textUnits(Array.from(run).map((c) => c + '︎').join('')), textUnits(run));
+  assert.equal(textUnits(run), 10);
 });
 
 test('semantic sigils cover every component and lifecycle kind without literal color', () => {
@@ -553,8 +959,256 @@ test('suggestLabelObstacleFix includes rects and labelAt/labelDy hints', () => {
   const hint = suggestLabelObstacleFix(labelRect, 124, 188, obstacle);
   assert.match(hint, /label rect: \[100, 180, 48, 14\]/);
   assert.match(hint, /component "memtool"/);
-  assert.match(hint, /Suggested fix: labelAt/);
-  assert.match(hint, /labelDy \+\d+/);
+  assert.match(hint, /Suggested fix: set labelAt/);
+  assert.match(hint, /set labelDy \d+/);
+});
+
+// Agents parse this hint, so pin the whole string for the no-viewBox contract.
+test('suggestLabelObstacleFix states its no-viewBox hint as replacement values', () => {
+  const labelRect = { x: 100, y: 180, width: 48, height: 14, label: '写入' };
+  const obstacle = { id: 'memtool', x: 30, y: 130, width: 230, height: 58 };
+  assert.equal(suggestLabelObstacleFix(labelRect, 124, 188, obstacle), [
+    '  label rect: [100, 180, 48, 14]',
+    '  component "memtool" rect: [30, 130, 230, 58]',
+    '  Suggested fix: set labelAt [124, 200] or set labelDy 12 (below); or set labelAt [124, 120] or set labelDy -68 (above)',
+  ].join('\n'));
+});
+
+test('suggestLabelObstacleFix carries an x nudge into the relative form', () => {
+  const labelRect = { x: 512, y: 94, width: 236, height: 14, label: 'batched telemetry upload' };
+  const obstacle = { id: 'edge', x: 560, y: 60, width: 140, height: 54 };
+  const hint = suggestLabelObstacleFix(labelRect, 630, 104, obstacle, 'component', [720, 400]);
+  assert.match(hint, /set labelAt \[602, 128\] or set labelDx -28 with labelDy 24 \(below\)/);
+  assert.doesNotMatch(hint, /or set labelDy /);
+});
+
+// labelDx/labelDy are offsets from the automatic label point, so a suggestion
+// has to be expressed relative to the values the document already carries.
+test('suggestLabelObstacleFix measures its relative fix from the authored labelDx', () => {
+  const obstacle = { id: 'edge', x: 560, y: 60, width: 140, height: 54 };
+  const authoredAnchor = 750; // automatic point 630 plus the authored labelDx
+  const labelRect = {
+    relation: { label: 'batched telemetry upload', labelDx: 120 },
+    x: authoredAnchor - 118,
+    y: 94,
+    width: 236,
+    height: 14,
+    label: 'batched telemetry upload',
+  };
+  const hint = suggestLabelObstacleFix(labelRect, authoredAnchor, 104, obstacle, 'component', [720, 400]);
+  // 120 + 602 - 750 lands the automatic point at the clamped anchor; the
+  // anchor-relative -148 would land it 120px away.
+  assert.match(hint, /set labelAt \[602, 128\] or set labelDx -28 with labelDy 24 \(below\)/);
+});
+
+test('suggestLabelObstacleFix offers no relative fix while labelAt is authored', () => {
+  const obstacle = { id: 'right', x: 540, y: 336, width: 160, height: 54 };
+  const labelRect = {
+    relation: { label: 'synchronous call', labelAt: [660, 360] },
+    x: 542,
+    y: 350,
+    width: 236,
+    height: 14,
+    label: 'synchronous call',
+  };
+  const hint = suggestLabelObstacleFix(labelRect, 660, 360, obstacle, 'component', [720, 400]);
+  assert.match(hint, /Suggested fix: set labelAt \[602, 328\] \(above\)$/);
+  assert.doesNotMatch(hint, /labelD[xy]/);
+});
+
+// The deltas are emitted as integers, so a fractional anchor sitting exactly on
+// a canvas bound cannot be expressed relatively without landing back outside.
+test('suggestLabelObstacleFix drops a relative fix that integer deltas cannot land inside', () => {
+  const obstacle = { id: 'api', x: 520, y: 180, width: 140, height: 54 };
+  const rectFor = (anchorX) => ({
+    relation: { label: 'edge' },
+    x: anchorX - 100,
+    y: 190,
+    width: 200,
+    height: 14,
+    label: 'edge',
+  });
+  assert.doesNotMatch(
+    suggestLabelObstacleFix(rectFor(620.5), 620.5, 200, obstacle, 'component', [720, 400]),
+    /labelD[xy]/,
+  );
+  assert.match(
+    suggestLabelObstacleFix(rectFor(620), 620, 200, obstacle, 'component', [720, 400]),
+    /set labelAt \[620, 248\] or set labelDy 48 \(below\)/,
+  );
+});
+
+// A rounded anchor as the measurement base adds its own residual to the
+// residual of rounding the suggestion, which can drift the applied label past
+// the containment tolerance. Measure from the real anchor instead.
+test('suggestLabelObstacleFix measures its relative fix from a fractional anchor', () => {
+  const anchorY = 200.6;
+  const labelRect = {
+    relation: { label: 'edge', labelDy: 0.3 },
+    x: 240,
+    y: anchorY - 10,
+    width: 120,
+    height: 14,
+    label: 'edge',
+  };
+  const obstacle = { id: 'api', x: 260, y: 180, width: 140, height: 54 };
+  const hint = suggestLabelObstacleFix(labelRect, 300, anchorY, obstacle, 'component', [720, 400]);
+  const suggested = Number(hint.match(/set labelDy (-?\d+) \(below\)/)[1]);
+  const placement = obstacle.y + obstacle.height + 14;
+  const landsAt = anchorY - labelRect.relation.labelDy + suggested;
+  assert.ok(
+    Math.abs(landsAt - placement) <= 0.5,
+    `labelDy ${suggested} lands the label at ${landsAt}, ${Math.abs(landsAt - placement)}px from the ${placement} placement`,
+  );
+});
+
+test('suggestLabelObstacleFix treats a fractional authored labelDx as no horizontal move', () => {
+  const labelRect = {
+    relation: { label: 'edge', labelDx: 40.4 },
+    x: 240,
+    y: 190,
+    width: 120,
+    height: 14,
+    label: 'edge',
+  };
+  const obstacle = { id: 'api', x: 260, y: 180, width: 140, height: 54 };
+  const hint = suggestLabelObstacleFix(labelRect, 300, 200, obstacle, 'component', [720, 400]);
+  assert.match(hint, /set labelAt \[300, 248\] or set labelDy 48 \(below\)/);
+  assert.doesNotMatch(hint, /labelDx/);
+});
+
+test('suggestLabelObstacleFix keeps its labelAt inside a supplied viewBox', () => {
+  const labelRect = { x: 596, y: 190, width: 160, height: 14, label: 'long edge label' };
+  const obstacle = { id: 'api', x: 560, y: 180, width: 140, height: 60 };
+  const hint = suggestLabelObstacleFix(labelRect, 676, 200, obstacle, 'component', [720, 400]);
+  const [, x, y] = hint.match(/labelAt \[(-?\d+), (-?\d+)\]/).map(Number);
+  assert.ok(x - labelRect.width / 2 >= 0 && x + labelRect.width / 2 <= 720, `labelAt x ${x} leaves the canvas`);
+  assert.ok(y - 10 >= 0 && y - 10 + labelRect.height <= 400, `labelAt y ${y} leaves the canvas`);
+});
+
+test('suggestLabelObstacleFix drops a placement that would only trade the obstacle for a clipped edge', () => {
+  const labelRect = { x: 200, y: 356, width: 120, height: 14, label: 'commit' };
+  const obstacle = { id: 'store', x: 180, y: 336, width: 160, height: 54 };
+  const hint = suggestLabelObstacleFix(labelRect, 260, 366, obstacle, 'component', [720, 400]);
+  assert.doesNotMatch(hint, /\(below\)/);
+  assert.match(hint, /labelAt \[260, 328\].*\(above\)/);
+});
+
+// The obstacle-only above anchor assumed the 14px single-line rect: applied to
+// a 27px two-line rect (dataflow classification, lifecycle note) it left the
+// label 12px inside the obstacle and the validator repeated the same hint.
+test('suggestLabelObstacleFix keeps both two-line forms clear of the obstacle it names', () => {
+  const cases = [
+    { labelRect: { x: 67, y: 139, width: 66, height: 27, label: 'clickstream' },
+      lx: 100, ly: 150,
+      obstacle: { id: 'web', x: 44, y: 128, width: 112, height: 58 },
+      viewBox: [1080, 760] },
+    { labelRect: { x: 360, y: 169, width: 81, height: 27, label: 'needs approval' },
+      lx: 400, ly: 180,
+      obstacle: { id: 'executing', x: 343, y: 126, width: 118, height: 62 },
+      viewBox: [980, 660] },
+  ];
+  for (const { labelRect, lx, ly, obstacle, viewBox } of cases) {
+    const hint = suggestLabelObstacleFix(labelRect, lx, ly, obstacle, 'node', viewBox);
+    const placements = [...hint.matchAll(/set labelAt \[(-?\d+), (-?\d+)\][^;]*\((above|below)\)/g)];
+    assert.equal(placements.length, 2, hint);
+    for (const [, x, y] of placements) {
+      const applied = {
+        x: Number(x) + (labelRect.x - lx),
+        y: Number(y) + (labelRect.y - ly),
+        width: labelRect.width,
+        height: labelRect.height,
+      };
+      assert.ok(
+        !rectsOverlap(applied, obstacle, -2),
+        `${hint}\napplied rect [${applied.x}, ${applied.y}, ${applied.width}, ${applied.height}] lands on "${obstacle.id}"`,
+      );
+    }
+  }
+});
+
+// Only the two vertical slots are tried, so the fallback must not claim that
+// no position exists anywhere — an open area elsewhere may still take the
+// label via labelAt.
+test('suggestLabelObstacleFix reports when neither vertical slot clears the obstacle', () => {
+  const labelRect = { x: 40, y: 30, width: 120, height: 14, label: 'commit' };
+  const obstacle = { id: 'store', x: 0, y: 0, width: 720, height: 400 };
+  const hint = suggestLabelObstacleFix(labelRect, 100, 40, obstacle, 'component', [720, 400]);
+  assert.doesNotMatch(hint, /set label/);
+  assert.match(hint, /no placement directly above or below "store" stays clear inside the 720x400 viewBox/);
+  assert.match(hint, /move the label to an open area with labelAt/);
+});
+
+test('suggestLabelObstacleFix offers no coordinate for a label wider than the canvas', () => {
+  const labelRect = { x: -40, y: 190, width: 800, height: 14, label: 'a label nobody can fit' };
+  const obstacle = { id: 'api', x: 200, y: 180, width: 140, height: 54 };
+  const hint = suggestLabelObstacleFix(labelRect, 360, 200, obstacle, 'component', [720, 400]);
+  assert.doesNotMatch(hint, /labelAt|labelDx|labelDy/);
+  assert.match(hint, /800px label rect cannot fit the 720x400 viewBox at any anchor — shorten the label/);
+});
+
+// A placement that merely trades the named obstacle for its neighbor fails the
+// same rule on re-render, so the filter takes every box the caller checks.
+test('suggestLabelObstacleFix keeps placements clear of the other supplied obstacles', () => {
+  const labelRect = { x: 310, y: 100, width: 120, height: 14, label: 'check' };
+  const named = { id: 'a', x: 300, y: 80, width: 140, height: 50 };
+  const neighborBelow = { id: 'b', x: 300, y: 140, width: 140, height: 50 };
+  const hint = suggestLabelObstacleFix(
+    labelRect, 370, 110, named, 'component', [720, 400], [named, neighborBelow],
+  );
+  assert.doesNotMatch(hint, /\(below\)/, hint);
+  assert.match(hint, /set labelAt \[370, 72\][^;]*\(above\)/);
+});
+
+test('cleanLabelCanvasContainmentProblems names both edges a corner overhang crosses and stays off standard', () => {
+  const labels = [{
+    relation: { id: 'a-to-b', from: 'a', to: 'b', label: 'over the corner' },
+    relationIndex: 0,
+    label: 'over the corner',
+    x: 680,
+    y: 392,
+    width: 60,
+    height: 14,
+  }];
+  const showcase = cleanLabelCanvasContainmentProblems({
+    labels,
+    viewBox: [720, 400],
+    diagramType: 'architecture',
+    relationCollection: 'connections',
+    profile: 'showcase',
+  });
+  assert.equal(showcase.length, 1);
+  assert.match(showcase[0], /extends past the right edge by 20px and bottom edge by 6px/);
+  assert.deepEqual(cleanLabelCanvasContainmentProblems({
+    labels,
+    viewBox: [720, 400],
+    diagramType: 'architecture',
+    relationCollection: 'connections',
+    profile: 'standard',
+  }), []);
+});
+
+// Label widths are estimated, so the rule has to sit above rounding noise and
+// below anything a reader would see as cut off.
+test('cleanLabelCanvasContainmentProblems ignores overhang under the 0.5px tolerance', () => {
+  const overhangingBy = (amount) => cleanLabelCanvasContainmentProblems({
+    labels: [{
+      relation: { id: 'a-to-b', from: 'a', to: 'b' },
+      relationIndex: 0,
+      label: 'edge',
+      x: 620 + amount,
+      y: 100,
+      width: 100,
+      height: 14,
+    }],
+    viewBox: [720, 400],
+    diagramType: 'architecture',
+    relationCollection: 'connections',
+    profile: 'showcase',
+  });
+  assert.deepEqual(overhangingBy(0.4), []);
+  assert.equal(overhangingBy(0.6).length, 1);
+  assert.match(overhangingBy(0.6)[0], /extends past the right edge by 0\.6px/);
 });
 
 test('suggestComponentSeparation proposes nudged pos', () => {
@@ -569,18 +1223,35 @@ test('applyTemplate preserves dollar sequences in titles', () => {
 <title>[PROJECT NAME] Architecture Diagram</title>
 <h1>[PROJECT NAME] Architecture</h1>
 <p class="subtitle">[Subtitle description]</p>
-<!-- ARCHIFY:GUIDED_VIEWS_DATA -->
+    <!-- ARCHIFY:I18N_DATA -->
       <!-- ARCHIFY:SVG_SLOT_START --><svg></svg>      <!-- ARCHIFY:SVG_SLOT_END -->
-    <!-- ARCHIFY:CARDS_SLOT_START --><div></div>    <!-- ARCHIFY:CARDS_SLOT_END -->
-[Project Name] &bull; [Additional metadata]`;
+    <!-- ARCHIFY:CARDS_SLOT_START --><div></div>    <!-- ARCHIFY:CARDS_SLOT_END -->`;
   const html = applyTemplate(template, {
     title: 'Plan $$50 tier',
     subtitle: 'test',
-    footer: 'f',
     svg: '<svg/>',
     cards: '',
   });
   assert.match(html, /Plan \$\$50 tier/);
+  assert.match(html, /<p class="subtitle">test<\/p>/);
+});
+
+test('applyTemplate omits the subtitle row when no subtitle is authored', () => {
+  const template = `<html lang="en" data-theme="dark" data-preset="[VISUAL PRESET]">
+<title>[PROJECT NAME] Architecture Diagram</title>
+<h1>[PROJECT NAME] Architecture</h1>
+<p class="subtitle">[Subtitle description]</p>
+    <!-- ARCHIFY:I18N_DATA -->
+      <!-- ARCHIFY:SVG_SLOT_START --><svg></svg>      <!-- ARCHIFY:SVG_SLOT_END -->
+    <!-- ARCHIFY:CARDS_SLOT_START --><div></div>    <!-- ARCHIFY:CARDS_SLOT_END -->`;
+  const html = applyTemplate(template, {
+    title: 'Focused title',
+    subtitle: '   ',
+    svg: '<svg/>',
+    cards: '',
+  });
+  assert.doesNotMatch(html, /class="subtitle"/);
+  assert.doesNotMatch(html, /Subtitle description/);
 });
 
 test('applyTemplate requires the new evidence slot only when evidence is present', () => {
@@ -588,15 +1259,14 @@ test('applyTemplate requires the new evidence slot only when evidence is present
 <title>[PROJECT NAME] Architecture Diagram</title>
 <h1>[PROJECT NAME] Architecture</h1>
 <p class="subtitle">[Subtitle description]</p>
-<!-- ARCHIFY:GUIDED_VIEWS_DATA -->
+    <!-- ARCHIFY:I18N_DATA -->
       <!-- ARCHIFY:SVG_SLOT_START --><svg></svg>      <!-- ARCHIFY:SVG_SLOT_END -->
-    <!-- ARCHIFY:CARDS_SLOT_START --><div></div>    <!-- ARCHIFY:CARDS_SLOT_END -->
-[Project Name] &bull; [Additional metadata]`;
+    <!-- ARCHIFY:CARDS_SLOT_START --><div></div>    <!-- ARCHIFY:CARDS_SLOT_END -->`;
   assert.doesNotThrow(() => applyTemplate(legacyTemplate, {
-    title: 'Legacy', subtitle: '', footer: '', svg: '<svg/>', cards: '',
+    title: 'Legacy', subtitle: '', svg: '<svg/>', cards: '',
   }));
   assert.throws(() => applyTemplate(legacyTemplate, {
-    title: 'Evidence', subtitle: '', footer: '', svg: '<svg/>', cards: '',
+    title: 'Evidence', subtitle: '', svg: '<svg/>', cards: '',
     sourceEvidence: { verified: true },
   }), /repository evidence requires placeholder/);
 });
