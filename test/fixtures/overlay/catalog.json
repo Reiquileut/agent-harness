@@ -1,0 +1,33 @@
+{
+  "mcps": [
+    {
+      "id": "fixture-private-mcp",
+      "label": "Fixture private MCP",
+      "transport": "stdio",
+      "command": "npx",
+      "args": ["-y", "fixture-private-mcp"],
+      "env": ["FIXTURE_PRIVATE_TOKEN"]
+    }
+  ],
+  "skills": [
+    { "id": "fixture-private-skill", "label": "Fixture private skill", "source": "local", "skill": "fixture-private-skill" },
+    { "id": "prd", "label": "PRD (overlay override)", "source": "local", "skill": "prd" }
+  ],
+  "subagents": [
+    {
+      "id": "fixture-private-agent",
+      "label": "Fixture private agent",
+      "file": "fixture-private-agent.md",
+      "codex_file": "fixture-private-agent.toml"
+    }
+  ],
+  "presets": [
+    {
+      "id": "fixture-private-preset",
+      "label": "Fixture private preset",
+      "files": [
+        { "op": "merge-json", "asset": "presets/fixture-settings.json", "dest": "~/.fixture-private/settings.json" }
+      ]
+    }
+  ]
+}

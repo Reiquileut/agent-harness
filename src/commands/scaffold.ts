@@ -1,7 +1,13 @@
 /**
- * scaffold — repo-level: drop starter CLAUDE.md / AGENTS.md / memory, install
+ * scaffold — repo-level: drop starter AGENTS.md / CLAUDE.md / memory, install
  * project-scoped skills, generate a project .mcp.json (and optionally
- * opencode.json), and merge .gitignore.
+ * opencode.json), write an `.ai-memory.toml` marker, and merge .gitignore.
+ *
+ * AGENTS.md is the canonical instructions file (Codex/OpenCode read it
+ * directly); CLAUDE.md is a stub whose first line is `@AGENTS.md`, because
+ * Claude Code does not read AGENTS.md when a CLAUDE.md exists. So asking for
+ * CLAUDE.md always brings AGENTS.md along — a stub importing a missing file
+ * would be a silent no-op.
  *
  * Interactive by default; fully flag-drivable for CI (`-y`). Idempotent and
  * never clobbers existing files unless --force. Run it inside an existing repo
@@ -16,12 +22,13 @@ import {
   type McpEntry,
   type SkillEntry,
   type SubagentEntry,
-  loadCatalog,
   mcpAppliesTo,
   skillAppliesTo,
 } from '../core/catalog';
 import { isDryRun, log } from '../core/fsx';
 import { buildProjectMcpAction } from '../core/mcp';
+import { buildAiMemoryTomlAction } from '../core/aimemory';
+import { loadCatalogWithOverlays } from '../core/overlay';
 import {
   buildInstallerSkillAction,
   buildLocalSkillCopyActions,
@@ -43,8 +50,14 @@ export interface ScaffoldOptions {
   withAgentsMd: boolean;
   withMemory: boolean;
   withOpencode: boolean;
+  /** Write .ai-memory.toml (needs aiMemoryWorkspace). */
+  withAiMemory: boolean;
+  aiMemoryWorkspace?: string;
+  aiMemoryProject?: string;
   gitignore: boolean; // commander: --no-gitignore => false
   memoryDest?: string;
+  /** Private overlay catalogs (dirs or git URLs); AGENT_HARNESS_OVERLAY adds more. */
+  overlay: string[];
   all: boolean;
   yes: boolean;
 }
@@ -55,6 +68,9 @@ export interface ScaffoldPlan {
   withMemory: boolean;
   withOpencode: boolean;
   withGitignore: boolean;
+  withAiMemory: boolean;
+  aiMemoryWorkspace?: string;
+  aiMemoryProject?: string;
   mcps: McpEntry[];
   skills: SkillEntry[];
   subagents: SubagentEntry[];
@@ -62,6 +78,7 @@ export interface ScaffoldPlan {
 }
 
 function planFromFlags(catalog: CatalogData, opts: ScaffoldOptions): ScaffoldPlan {
+  const aiMemory = { aiMemoryWorkspace: opts.aiMemoryWorkspace, aiMemoryProject: opts.aiMemoryProject };
   const memoryDest = opts.memoryDest ?? DEFAULT_MEMORY_DEST;
   if (opts.all) {
     return {
@@ -70,6 +87,8 @@ function planFromFlags(catalog: CatalogData, opts: ScaffoldOptions): ScaffoldPla
       withMemory: true,
       withOpencode: true,
       withGitignore: true,
+      withAiMemory: true,
+      ...aiMemory,
       mcps: catalog.mcps,
       skills: catalog.skills,
       subagents: catalog.subagents,
@@ -78,10 +97,12 @@ function planFromFlags(catalog: CatalogData, opts: ScaffoldOptions): ScaffoldPla
   }
   return {
     withClaudeMd: opts.withClaudeMd,
-    withAgentsMd: opts.withAgentsMd,
+    withAgentsMd: opts.withAgentsMd || opts.withClaudeMd,
     withMemory: opts.withMemory,
     withOpencode: opts.withOpencode,
     withGitignore: opts.gitignore,
+    withAiMemory: opts.withAiMemory,
+    ...aiMemory,
     mcps: catalog.mcps.filter((m) => opts.mcp.includes(m.id)),
     skills: catalog.skills.filter((s) => opts.skill.includes(s.id)),
     subagents: catalog.subagents.filter((s) => opts.subagent.includes(s.id)),
@@ -97,6 +118,7 @@ function isInteractive(opts: ScaffoldOptions): boolean {
     opts.withAgentsMd ||
     opts.withMemory ||
     opts.withOpencode ||
+    opts.withAiMemory ||
     opts.mcp.length > 0 ||
     opts.skill.length > 0 ||
     opts.subagent.length > 0;
@@ -110,6 +132,7 @@ function isEmptyPlan(p: ScaffoldPlan): boolean {
     !p.withAgentsMd &&
     !p.withMemory &&
     !p.withGitignore &&
+    !p.withAiMemory &&
     p.mcps.length === 0 &&
     p.skills.length === 0 &&
     p.subagents.length === 0
@@ -157,11 +180,11 @@ export async function buildScaffoldActions(
   plan: ScaffoldPlan,
 ): Promise<Action[]> {
   const actions: Action[] = [];
-  if (plan.withClaudeMd) {
-    actions.push(await buildTemplateCopyAction(catalog.templates.claude_md, 'CLAUDE.md', 'CLAUDE.md'));
+  if (plan.withAgentsMd || plan.withClaudeMd) {
+    actions.push(await buildTemplateCopyAction(catalog.templates.agents_md, 'AGENTS.md', 'AGENTS.md (canonical)'));
   }
-  if (plan.withAgentsMd) {
-    actions.push(await buildTemplateCopyAction(catalog.templates.agents_md, 'AGENTS.md', 'AGENTS.md'));
+  if (plan.withClaudeMd) {
+    actions.push(await buildTemplateCopyAction(catalog.templates.claude_md, 'CLAUDE.md', 'CLAUDE.md (@AGENTS.md import)'));
   }
   if (plan.withMemory) {
     actions.push(
@@ -186,6 +209,9 @@ export async function buildScaffoldActions(
       }
     }
   }
+  if (plan.withAiMemory) {
+    actions.push(await buildAiMemoryTomlAction(plan.aiMemoryWorkspace, plan.aiMemoryProject));
+  }
   if (plan.withGitignore) {
     actions.push(await buildGitignoreMergeAction(catalog.gitignore));
   }
@@ -193,8 +219,16 @@ export async function buildScaffoldActions(
 }
 
 export async function runScaffoldCommand(opts: ScaffoldOptions): Promise<void> {
-  const catalog = await loadCatalog();
+  const loaded = await loadCatalogWithOverlays(opts.overlay);
+  try {
+    for (const note of loaded.notes) log.warn(note);
+    await runScaffoldWithCatalog(loaded.catalog, opts);
+  } finally {
+    await loaded.dispose();
+  }
+}
 
+async function runScaffoldWithCatalog(catalog: CatalogData, opts: ScaffoldOptions): Promise<void> {
   const plan = isInteractive(opts)
     ? await promptScaffoldSelection(catalog)
     : planFromFlags(catalog, opts);
@@ -205,7 +239,7 @@ export async function runScaffoldCommand(opts: ScaffoldOptions): Promise<void> {
   }
   if (isEmptyPlan(plan)) {
     log.warn(
-      'Nothing to scaffold. Pass --with-claude-md / --with-agents-md / --with-memory / --skill <id> / --mcp <id> / --all.',
+      'Nothing to scaffold. Pass --with-claude-md / --with-agents-md / --with-memory / --with-ai-memory / --skill <id> / --mcp <id> / --all.',
     );
     return;
   }
@@ -219,5 +253,5 @@ export async function runScaffoldCommand(opts: ScaffoldOptions): Promise<void> {
 
   log.plain('');
   log.success(isDryRun() ? 'Dry run complete — nothing written.' : 'Scaffold complete.');
-  log.plain(pc.dim('  CLAUDE.md → Claude Code · AGENTS.md → Codex & OpenCode · skills → project skill dirs.'));
+  log.plain(pc.dim('  AGENTS.md → canonical (Codex & OpenCode read it) · CLAUDE.md → @AGENTS.md import for Claude Code · skills → project skill dirs.'));
 }

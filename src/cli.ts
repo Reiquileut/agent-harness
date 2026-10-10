@@ -26,6 +26,8 @@ program
   .option('--plugin <id>', 'plugin to install (repeatable)', collect, [])
   .option('--subagent <id>', 'custom agent to install (repeatable)', collect, [])
   .option('--preset <id>', 'settings/config preset to apply (repeatable)', collect, [])
+  .option('--integration <id>', 'integration to run, e.g. ai-memory (repeatable)', collect, [])
+  .option('--overlay <dir|git-url>', 'private overlay catalog to add (repeatable; also AGENT_HARNESS_OVERLAY, ";"-separated)', collect, [])
   .option('--all', 'select every catalog item', false)
   .option('--no-manifest', "do not record what was installed in the agent's global instructions file")
   .option('-y, --yes', 'assume defaults, no prompts (CI)', false)
@@ -40,6 +42,8 @@ program
       plugin: opts.plugin,
       subagent: opts.subagent,
       preset: opts.preset,
+      integration: opts.integration,
+      overlay: opts.overlay,
       all: !!opts.all,
       manifest: opts.manifest !== false,
       yes: !!opts.yes,
@@ -49,7 +53,7 @@ program
 
 program
   .command('scaffold')
-  .description('Scaffold the current repo: CLAUDE.md, AGENTS.md, skill memory, project-scoped skills, project .mcp.json, and merge .gitignore.')
+  .description('Scaffold the current repo: AGENTS.md (canonical) + CLAUDE.md (@AGENTS.md import), skill memory, project-scoped skills, project .mcp.json, .ai-memory.toml, and merge .gitignore.')
   .option('--mcp <id>', 'MCP to include in project config (repeatable)', collect, [])
   .option('--skill <id>', 'skill to install into the repo, project-scoped (repeatable)', collect, [])
   .option('--subagent <id>', 'custom agent to install into the repo, project-scoped (repeatable)', collect, [])
@@ -57,6 +61,10 @@ program
   .option('--with-agents-md', 'write AGENTS.md', false)
   .option('--with-memory', 'write the skill memory file', false)
   .option('--with-opencode', 'also write a project opencode.json', false)
+  .option('--with-ai-memory', 'write .ai-memory.toml (needs --ai-memory-workspace)', false)
+  .option('--ai-memory-workspace <name>', 'ai-memory workspace for .ai-memory.toml')
+  .option('--ai-memory-project <name>', 'ai-memory project (default: the directory name)')
+  .option('--overlay <dir|git-url>', 'private overlay catalog to add (repeatable; also AGENT_HARNESS_OVERLAY)', collect, [])
   .option('--memory-dest <path>', 'destination path for the memory file')
   .option('--no-gitignore', 'do not merge .gitignore')
   .option('--all', 'scaffold all docs + all catalog MCPs', false)
@@ -73,6 +81,10 @@ program
       withAgentsMd: !!opts.withAgentsMd,
       withMemory: !!opts.withMemory,
       withOpencode: !!opts.withOpencode,
+      withAiMemory: !!opts.withAiMemory,
+      aiMemoryWorkspace: opts.aiMemoryWorkspace,
+      aiMemoryProject: opts.aiMemoryProject,
+      overlay: opts.overlay,
       gitignore: opts.gitignore !== false,
       memoryDest: opts.memoryDest,
       all: !!opts.all,

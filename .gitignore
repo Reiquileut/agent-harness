@@ -27,3 +27,10 @@ Thumbs.db
 #   pnpm dlx github:reiquileut/agent-harness init
 # works with no build step, regardless of the user's pnpm version.
 # Do NOT add dist/ to this file.
+
+# local agent runtime files (machine paths — never commit)
+.claude/settings.local.json
+.codex/
+
+# e2e artifacts (uploaded by CI, not committed)
+artifacts/

@@ -23,14 +23,15 @@ export function subagentFileFor(entry: SubagentEntry, agent: AgentInfo): string 
   return agent.subagents.format === 'toml' ? entry.codex_file : entry.file;
 }
 
-export function localSubagentFile(file: string): string {
-  return path.join(assetsDir(), 'agents', file);
+/** Bundled subagent file: `<assets of its catalog>/agents/<file>` (an overlay dir for private agents). */
+export function localSubagentFile(entry: SubagentEntry, file: string): string {
+  return path.join(entry.assetsRoot ?? assetsDir(), 'agents', file);
 }
 
 /** True when the entry has a bundled variant this agent can read. */
 export function hasSubagentFor(entry: SubagentEntry, agent: AgentInfo): boolean {
   const file = subagentFileFor(entry, agent);
-  return Boolean(file && pathExists(localSubagentFile(file)));
+  return Boolean(file && pathExists(localSubagentFile(entry, file)));
 }
 
 /** Copy the bundled subagent file into the agent's subagents dir. */
@@ -47,13 +48,13 @@ export async function buildSubagentCopyAction(
   if (!file) {
     return { kind: 'skip', label, reason: `no ${agent.subagents.format} variant bundled` };
   }
-  const srcFile = localSubagentFile(file);
+  const srcFile = localSubagentFile(entry, file);
   if (!pathExists(srcFile)) {
     return {
       kind: 'note',
       level: 'warn',
       label,
-      message: `No local file at assets/agents/${file} — skipping.`,
+      message: `No local file at ${srcFile} — skipping.`,
     };
   }
   const destBase = expandHome(scope === 'user' ? agent.subagents.userDir : agent.subagents.projectDir);

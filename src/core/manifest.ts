@@ -12,11 +12,13 @@
 import type { Action } from './actions';
 import type { AgentInfo } from './agents';
 import {
+  type IntegrationEntry,
   type McpEntry,
   type PluginEntry,
   type PresetEntry,
   type SkillEntry,
   appliesToAgent,
+  integrationAppliesTo,
   mcpAppliesTo,
   pluginAppliesTo,
   skillAppliesTo,
@@ -31,6 +33,8 @@ export interface ManifestInput {
   plugins: PluginEntry[];
   subagents: { id: string }[];
   presets: PresetEntry[];
+  /** Optional: older callers (and scaffold) have no integrations. */
+  integrations?: IntegrationEntry[];
 }
 
 const list = (names: string[]): string => [...names].sort().join(', ');
@@ -57,6 +61,7 @@ export function renderManifest(agent: AgentInfo, sel: ManifestInput, version: st
   const plugins = agent.supports.plugins ? sel.plugins.filter((p) => pluginAppliesTo(p, agent.id)) : [];
   const subagents = agent.supports.subagents ? sel.subagents : [];
   const presets = sel.presets.filter((p) => appliesToAgent(p.agents, agent.id));
+  const integrations = (sel.integrations ?? []).filter((i) => integrationAppliesTo(i, agent.id));
 
   const lines: string[] = [
     `## Provisioned by agent-harness v${version}`,
@@ -76,9 +81,10 @@ export function renderManifest(agent: AgentInfo, sel: ManifestInput, version: st
   }
   if (plugins.length) lines.push(`**Plugins** — ${list(plugins.map((p) => p.id))}`);
   if (presets.length) lines.push(`**Presets** — ${list(presets.map((p) => p.id))}`);
+  if (integrations.length) lines.push(`**Integrations** — ${list(integrations.map((i) => i.id))}`);
 
   const prereqs = prerequisiteLines(skills);
-  const envs = requiredEnvVars(mcps);
+  const envs = [...new Set([...requiredEnvVars(mcps), ...integrations.flatMap((i) => i.env)])].sort();
   if (prereqs.length || envs.length) {
     lines.push('', "**Prerequisites the installer doesn't provide:**", ...prereqs);
     if (envs.length) lines.push(`- Env vars — ${envs.join(', ')}`);

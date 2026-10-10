@@ -12,7 +12,7 @@
  * `{{HOME}}` inside an asset expands to the home dir (forward slashes, which
  * Node and both agents accept on Windows too).
  */
-import type { Action } from './actions';
+import { type Action, type ApplyResult, runAction } from './actions';
 import { assetPath } from './catalog';
 import type { PresetEntry, PresetFile } from './catalog';
 import { appliesToAgent } from './catalog';
@@ -28,6 +28,7 @@ import {
   stringifyToml,
   tildify,
 } from './fsx';
+import { platformAllows, platformSkipReason } from './platform';
 
 /** Deep merge where arrays union by JSON value (order: base first, then new). */
 export function deepMergeUnion(base: unknown, patch: unknown): unknown {
@@ -59,13 +60,14 @@ function sameJson(a: unknown, b: unknown): boolean {
   return JSON.stringify(a) === JSON.stringify(b);
 }
 
-async function readAsset(rel: string): Promise<string | null> {
-  const text = await readText(assetPath(rel));
+/** Read a preset asset from the catalog it came from (bundled or overlay), `{{HOME}}` expanded. */
+async function readAsset(file: PresetFile): Promise<string | null> {
+  const text = await readText(assetPath(file.asset, file.assetsRoot));
   return text == null ? null : substitutePlaceholders(text);
 }
 
 async function buildCopy(file: PresetFile, label: string): Promise<Action> {
-  const after = await readAsset(file.asset);
+  const after = await readAsset(file);
   if (after == null) return { kind: 'note', level: 'warn', label, message: `Preset asset missing: ${file.asset}` };
   const dest = expandHome(file.dest);
   const before = await readText(dest);
@@ -76,7 +78,7 @@ async function buildCopy(file: PresetFile, label: string): Promise<Action> {
 }
 
 async function buildMergeJson(file: PresetFile, label: string): Promise<Action> {
-  const assetText = await readAsset(file.asset);
+  const assetText = await readAsset(file);
   if (assetText == null) return { kind: 'note', level: 'warn', label, message: `Preset asset missing: ${file.asset}` };
   let patch: unknown;
   try {
@@ -102,7 +104,7 @@ async function buildMergeJson(file: PresetFile, label: string): Promise<Action> 
 }
 
 async function buildMergeToml(file: PresetFile, label: string): Promise<Action> {
-  const assetText = await readAsset(file.asset);
+  const assetText = await readAsset(file);
   if (assetText == null) return { kind: 'note', level: 'warn', label, message: `Preset asset missing: ${file.asset}` };
   let patch: Record<string, unknown>;
   try {
@@ -130,23 +132,65 @@ async function buildMergeToml(file: PresetFile, label: string): Promise<Action> 
   return { kind: 'file', label, path: dest, before, after: stringifyToml(merged) };
 }
 
-/** Build every file action of a preset for the selected agents. */
-export async function buildPresetActions(preset: PresetEntry, agentIds: string[]): Promise<Action[]> {
-  const actions: Action[] = [];
-  for (const file of preset.files) {
-    if (file.agents && !agentIds.some((id) => appliesToAgent(file.agents, id))) continue;
-    const label = `Preset ${preset.label ?? preset.id} → ${tildify(expandHome(file.dest))}`;
-    switch (file.op) {
-      case 'copy':
-        actions.push(await buildCopy(file, label));
-        break;
-      case 'merge-json':
-        actions.push(await buildMergeJson(file, label));
-        break;
-      case 'merge-toml':
-        actions.push(await buildMergeToml(file, label));
-        break;
-    }
+/**
+ * ensure-prefix: write the asset when `dest` is missing; prepend it when the
+ * file exists but lacks the asset's first line (e.g. the `@~/.codex/AGENTS.md`
+ * import missing from a CLAUDE.md an older harness run created with only the
+ * manifest block); otherwise leave the user's file alone.
+ */
+async function buildEnsurePrefix(file: PresetFile, label: string): Promise<Action> {
+  const asset = await readAsset(file);
+  if (asset == null) return { kind: 'note', level: 'warn', label, message: `Preset asset missing: ${file.asset}` };
+  const dest = expandHome(file.dest);
+  const before = await readText(dest);
+  if (before == null) return { kind: 'file', label, path: dest, before, after: asset };
+  const marker = asset.split(/\r?\n/)[0]?.trim() ?? '';
+  if (before.split(/\r?\n/).some((line) => line.trim() === marker)) {
+    return { kind: 'skip', label, reason: `${tildify(dest)} already starts with ${marker}` };
   }
-  return actions;
+  return { kind: 'file', label, path: dest, before, after: `${asset.trimEnd()}\n\n${before}` };
+}
+
+/**
+ * Build the action for ONE preset file. Callers must run it before building
+ * the next file: two files with the same `dest` (a base preset plus its
+ * `platforms:["win32"]` companion) would otherwise both merge into the same
+ * stale `before` and the second write would drop the first.
+ */
+export async function buildPresetFileAction(preset: Pick<PresetEntry, 'id' | 'label'>, file: PresetFile): Promise<Action> {
+  const label = `Preset ${preset.label ?? preset.id} → ${tildify(expandHome(file.dest))}`;
+  if (!platformAllows(file.platforms)) {
+    return { kind: 'skip', label, reason: platformSkipReason(file.platforms) };
+  }
+  switch (file.op) {
+    case 'copy':
+      return buildCopy(file, label);
+    case 'merge-json':
+      return buildMergeJson(file, label);
+    case 'merge-toml':
+      return buildMergeToml(file, label);
+    case 'ensure-prefix':
+      return buildEnsurePrefix(file, label);
+  }
+}
+
+/** The preset's files that apply to the selected agents (file-level `agents` filter). */
+export function presetFilesFor(files: PresetFile[], agentIds: string[]): PresetFile[] {
+  return files.filter((file) => !file.agents || agentIds.some((id) => appliesToAgent(file.agents, id)));
+}
+
+/**
+ * Build-and-run every file of a preset, one at a time (see buildPresetFileAction).
+ * Example: `await runPresetFiles(preset, preset.files, ['codex'])`.
+ */
+export async function runPresetFiles(
+  preset: Pick<PresetEntry, 'id' | 'label'>,
+  files: PresetFile[],
+  agentIds: string[],
+): Promise<ApplyResult[]> {
+  const results: ApplyResult[] = [];
+  for (const file of presetFilesFor(files, agentIds)) {
+    results.push(await runAction(await buildPresetFileAction(preset, file)));
+  }
+  return results;
 }

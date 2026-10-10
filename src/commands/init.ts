@@ -16,12 +16,12 @@ import {
 } from '../core/agents';
 import {
   type CatalogData,
+  type IntegrationEntry,
   type McpEntry,
   type PluginEntry,
   type PresetEntry,
   type SkillEntry,
   type SubagentEntry,
-  loadCatalog,
   looksLikePlaceholder,
   mcpAppliesTo,
   pluginAppliesTo,
@@ -34,7 +34,10 @@ import {
   buildPluginSettingsFallbackAction,
 } from '../core/plugins';
 import { buildUserMcpAction, requiredEnvVars } from '../core/mcp';
-import { buildPresetActions } from '../core/presets';
+import { runPresetFiles } from '../core/presets';
+import { runIntegration } from '../core/integrations';
+import { loadCatalogWithOverlays } from '../core/overlay';
+import { platformAllows, platformSkipReason } from '../core/platform';
 import {
   buildInstallerSkillAction,
   buildLocalSkillCopyActions,
@@ -55,6 +58,9 @@ export interface InitOptions {
   plugin: string[];
   subagent: string[];
   preset: string[];
+  integration: string[];
+  /** Private overlay catalogs (dirs or git URLs); AGENT_HARNESS_OVERLAY adds more. */
+  overlay: string[];
   all: boolean;
   /** Record the installed inventory in each agent's global instructions file. */
   manifest: boolean;
@@ -71,6 +77,7 @@ export interface Selection {
   plugins: PluginEntry[];
   subagents: SubagentEntry[];
   presets: PresetEntry[];
+  integrations: IntegrationEntry[];
   /** Optional repo-level setup (interactive unified flow); flags leave it unset. */
   repo?: ScaffoldPlan;
 }
@@ -94,6 +101,7 @@ function selectionFromFlags(catalog: CatalogData, opts: InitOptions): Selection 
     plugins: pick(catalog.plugins, opts.plugin),
     subagents: pick(catalog.subagents, opts.subagent),
     presets: pick(catalog.presets, opts.preset),
+    integrations: pick(catalog.integrations, opts.integration),
   };
 }
 
@@ -120,14 +128,23 @@ function isInteractive(opts: InitOptions): boolean {
     opts.skill.length > 0 ||
     opts.plugin.length > 0 ||
     opts.subagent.length > 0 ||
-    opts.preset.length > 0;
+    opts.preset.length > 0 ||
+    opts.integration.length > 0;
   if (explicit) return false;
   return Boolean(process.stdout.isTTY && process.stdin.isTTY);
 }
 
 export async function runInitCommand(opts: InitOptions): Promise<void> {
-  const catalog = await loadCatalog();
+  const loaded = await loadCatalogWithOverlays(opts.overlay);
+  try {
+    for (const note of loaded.notes) log.warn(note);
+    await runInitWithCatalog(loaded.catalog, opts);
+  } finally {
+    await loaded.dispose();
+  }
+}
 
+async function runInitWithCatalog(catalog: CatalogData, opts: InitOptions): Promise<void> {
   const selection = isInteractive(opts)
     ? await promptInitSelection(catalog)
     : selectionFromFlags(catalog, opts);
@@ -143,6 +160,7 @@ export async function runInitCommand(opts: InitOptions): Promise<void> {
   }
 
   warnPlaceholders(selection);
+  logPlatformSkips(selection);
 
   log.plain('');
   log.info(
@@ -152,8 +170,11 @@ export async function runInitCommand(opts: InitOptions): Promise<void> {
   );
 
   // Presets first: a global AGENTS.md/CLAUDE.md template must land before the
-  // per-agent manifest block is merged into that same file.
+  // per-agent manifest block is merged into that same file. Integrations next:
+  // ai-memory's `install-instructions` appends its block to that template, and
+  // the agent-harness manifest (per-agent loop) must land after it.
   await runPresets(selection);
+  await runIntegrations(selection);
 
   for (const agent of selection.agents) {
     log.plain('');
@@ -255,7 +276,7 @@ async function runInstallerSkills(sel: Selection): Promise<void> {
   }
 }
 
-/** Presets (settings / config merges) for the selected agents. */
+/** Presets (settings / config merges) for the selected agents, one file at a time. */
 async function runPresets(sel: Selection): Promise<void> {
   const agentIds = sel.agents.map((a) => a.id);
   const applicable = sel.presets.filter((p) => presetAppliesTo(p, agentIds));
@@ -263,7 +284,25 @@ async function runPresets(sel: Selection): Promise<void> {
   log.plain('');
   log.step(pc.bold('Presets (settings / config)'));
   for (const p of applicable) {
-    await runActions(await buildPresetActions(p, agentIds));
+    await runPresetFiles(p, p.files, agentIds);
+  }
+}
+
+/** Integrations (ai-memory…): their own installer CLIs, after presets, before the manifest. */
+async function runIntegrations(sel: Selection): Promise<void> {
+  if (!sel.integrations.length) return;
+  log.plain('');
+  log.step(pc.bold('Integrações'));
+  for (const integration of sel.integrations) {
+    await runIntegration(integration, sel.agents);
+  }
+}
+
+/** One skip line per selected MCP/skill this OS can't use (e.g. Pencil's .exe on Linux). */
+function logPlatformSkips(sel: Selection): void {
+  const blocked = [...sel.mcps, ...sel.skills].filter((entry) => !platformAllows(entry.platforms));
+  for (const entry of blocked) {
+    log.plain(`   ${pc.dim('· skip')} ${entry.id} — ${pc.dim(platformSkipReason(entry.platforms))}`);
   }
 }
 
@@ -300,6 +339,10 @@ function printAuthBlock(sel: Selection): void {
   const envs = requiredEnvVars([...sel.mcps, ...(sel.repo?.mcps ?? [])]);
   if (envs.length) {
     log.plain(pc.dim(`  MCPs needing API keys — export in your shell/.env: ${envs.join(', ')}`));
+  }
+  const integrationEnvs = [...new Set(sel.integrations.flatMap((i) => i.env))];
+  if (integrationEnvs.length) {
+    log.plain(pc.dim(`  Integrations read from your environment: ${integrationEnvs.join(', ')}`));
   }
   if (sel.skills.some((s) => s.id === 'impeccable')) {
     log.plain(pc.dim('  Impeccable: type /impeccable init inside the agent chat to set up design context.'));

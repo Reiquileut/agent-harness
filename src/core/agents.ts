@@ -7,7 +7,7 @@
  *
  * Reference facts verified against each vendor's current docs (see plan).
  */
-import { existsSync } from 'node:fs';
+import { accessSync, constants as fsConstants, existsSync } from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 import { expandHome, pathExists } from './fsx';
@@ -139,15 +139,23 @@ export function commandOnPath(bin: string): boolean {
       : [''];
   for (const dir of rawPath.split(sep)) {
     if (!dir) continue;
-    for (const ext of exts) {
-      try {
-        if (existsSync(path.join(dir, bin + ext))) return true;
-      } catch {
-        /* ignore unreadable PATH entries */
-      }
-    }
+    if (exts.some((ext) => isRunnableFile(path.join(dir, bin + ext)))) return true;
   }
   return false;
+}
+
+/**
+ * Exists, and on POSIX also carries an exec bit — a non-executable file named
+ * like the binary (a stray download, a doc) must not count as installed.
+ */
+function isRunnableFile(candidate: string): boolean {
+  try {
+    if (!existsSync(candidate)) return false;
+    if (process.platform !== 'win32') accessSync(candidate, fsConstants.X_OK);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /** An agent counts as installed if a config dir/file exists or its binary is on PATH. */

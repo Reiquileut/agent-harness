@@ -1,0 +1,3 @@
+name = "fixture-private-agent"
+description = "Test fixture subagent shipped by the overlay e2e suite."
+developer_instructions = "FIXTURE-PRIVATE-AGENT-MARKER"

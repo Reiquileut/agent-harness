@@ -166,19 +166,24 @@ async function buildClaudeUserMcp(src: McpEntry, label: string): Promise<Action>
   if (!isForce() && (await claudeHasMcp(m.id))) {
     return { kind: 'skip', label, reason: 'already configured (claude mcp)' };
   }
-  // Flag form keeps args simple (no JSON blob) — safer across shells/Windows shims.
-  const base = ['mcp', 'add', '--scope', 'user'];
-  let args: string[];
+  return { kind: 'exec', label, cmd: 'claude', args: claudeMcpAddArgs(m), timeout: 120_000 };
+}
+
+/**
+ * Flag form (no JSON blob — safer across shells/Windows shims). The name (and
+ * URL) go right after `add`: `-e/--env` and `-H/--header` are variadic in the
+ * Claude CLI, so `--env K=V name` swallowed the name and the add failed (seen
+ * with Claude Code 2.1.296 on a clean Ubuntu, 2026-10-09; the CLI's own help
+ * shows `claude mcp add my-server -e KEY=value -- npx …`).
+ * Example: stdio → ['mcp','add','x','--scope','user','--transport','stdio','--env','K=${K}','--','npx','pkg'].
+ */
+export function claudeMcpAddArgs(m: McpEntry): string[] {
   if (m.transport === 'http') {
-    args = [...base, '--transport', 'http'];
-    for (const [k, v] of Object.entries(m.headers)) args.push('--header', `${k}: ${v}`);
-    args.push(m.id, m.url);
-  } else {
-    args = [...base, '--transport', 'stdio'];
-    for (const name of m.env) args.push('--env', `${name}=\${${name}}`);
-    args.push(m.id, '--', m.command, ...m.args);
+    const headers = Object.entries(m.headers).flatMap(([k, v]) => ['--header', `${k}: ${v}`]);
+    return ['mcp', 'add', m.id, m.url, '--scope', 'user', '--transport', 'http', ...headers];
   }
-  return { kind: 'exec', label, cmd: 'claude', args, timeout: 120_000 };
+  const env = m.env.flatMap((name) => ['--env', `${name}=\${${name}}`]);
+  return ['mcp', 'add', m.id, '--scope', 'user', '--transport', 'stdio', ...env, '--', m.command, ...m.args];
 }
 
 async function buildCodexUserMcp(agent: AgentInfo, m: McpEntry, label: string): Promise<Action> {

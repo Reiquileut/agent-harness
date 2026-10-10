@@ -82,8 +82,9 @@ export function buildInstallerSkillAction(
   return { kind: 'exec', label, cmd: inst.cmd, args, cwd, timeout: 300_000 };
 }
 
+/** Bundled copy of a skill: `<assets of its catalog>/skills/<id>` (an overlay dir for private skills). */
 export function localSkillDir(skill: SkillEntry): string {
-  return path.join(assetsDir(), 'skills', skill.id);
+  return path.join(skill.assetsRoot ?? assetsDir(), 'skills', skill.id);
 }
 
 export function hasLocalSkill(skill: SkillEntry): boolean {
@@ -136,7 +137,7 @@ export async function buildLocalSkillCopyActions(
         kind: 'note',
         level: 'warn',
         label,
-        message: `No local copy at assets/skills/${skill.id}/ — install this skill manually.`,
+        message: `No local copy at ${srcDir} — install this skill manually.`,
       },
     ];
   }
