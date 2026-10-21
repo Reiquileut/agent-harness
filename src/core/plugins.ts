@@ -15,12 +15,19 @@
  * rewrite the file under --force. Marketplaces flagged `builtin` (openai-curated,
  * openai-bundled, …) are registered by the Codex app itself, so only the
  * `[plugins.*]` enable tables are written.
+ *
+ * Bundled marketplaces (v1.7.0, the owner's Claude Code mods) ship inside this
+ * repo: they are staged into `installPath` (a file edited there is kept unless
+ * --force) and registered by that local path — `claude plugin marketplace add
+ * ./dir` (Context7 code.claude.com/docs plugins, 2026-10-20), a `directory`
+ * source in the settings fallback, `source_type = "local"` for Codex.
  */
+import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import type { Action } from './actions';
 import type { AgentInfo } from './agents';
 import { commandOnPath, userMcpFileAbs } from './agents';
-import type { PluginEntry } from './catalog';
+import { type PluginEntry, assetPath } from './catalog';
 import {
   expandHome,
   isForce,
@@ -28,6 +35,7 @@ import {
   jsonStringify,
   log,
   parseToml,
+  readBytes,
   readText,
   stringifyToml,
   tildify,
@@ -47,37 +55,107 @@ export function marketplaceGitUrl(plugin: PluginEntry): string {
   return `https://github.com/${m.replace(/\.git$/, '')}.git`;
 }
 
+// ---------------------------------------------------------------------------
+// Bundled marketplaces (mods)
+// ---------------------------------------------------------------------------
+/** Absolute dir a bundled marketplace is staged into. Example: bundledInstallPath(mod) → '/home/me/.claude/mods'. */
+export function bundledInstallPath(plugin: PluginEntry): string {
+  return expandHome(plugin.installPath ?? '');
+}
+
+async function installedCopyDiffers(src: string, dest: string): Promise<boolean> {
+  const installed = await readBytes(dest);
+  if (installed == null) return false;
+  const bundled = await readBytes(src);
+  return bundled == null || !bundled.equals(installed);
+}
+
+/** One staged file; a copy the user edited in place is kept unless --force. */
+async function bundledStagingAction(src: string, dest: string): Promise<Action> {
+  const label = `Bundled plugin file ${path.basename(src)}`;
+  if (!isForce() && (await installedCopyDiffers(src, dest))) {
+    return { kind: 'skip', label, reason: `${tildify(dest)} edited locally (use --force to replace)` };
+  }
+  return { kind: 'copy', label, src, dest };
+}
+
+async function bundledStagingTree(sourceDir: string, destDir: string): Promise<Action[]> {
+  const entries = await fs.readdir(sourceDir, { withFileTypes: true });
+  const actions: Action[] = [];
+  for (const entry of entries) {
+    const src = path.join(sourceDir, entry.name);
+    const dest = path.join(destDir, entry.name);
+    if (entry.isDirectory()) actions.push(...(await bundledStagingTree(src, dest)));
+    else if (entry.isFile()) actions.push(await bundledStagingAction(src, dest));
+  }
+  return actions;
+}
+
+/** Stage a bundled marketplace before it is registered. Example: await buildBundledStagingActions(mod). */
+export async function buildBundledStagingActions(plugin: PluginEntry): Promise<Action[]> {
+  if (!plugin.bundled) return [];
+  const sourceDir = assetPath(plugin.marketplace, plugin.assetsRoot);
+  try {
+    return await bundledStagingTree(sourceDir, bundledInstallPath(plugin));
+  } catch (err) {
+    const message = `Bundled marketplace missing at ${sourceDir} (expected a dir with .claude-plugin/marketplace.json): ${(err as Error).message}`;
+    return [{ kind: 'note', level: 'warn', label: `Plugin ${plugin.id}`, message }];
+  }
+}
+
 /** True when we can drive the `claude` CLI; otherwise the caller uses the fallback. */
 export function claudeAvailable(): boolean {
   return commandOnPath('claude');
 }
 
-/** Build the plugin actions for one agent. Empty array = use the Claude settings fallback. */
-export async function buildPluginActions(agent: AgentInfo, plugin: PluginEntry): Promise<Action[]> {
+/**
+ * Build the plugin actions for one agent. Empty array = use the Claude settings
+ * fallback. `seenMarketplaces` (shared across one agent's plugins) keeps a
+ * marketplace — the 4 mods share one — from being staged and added again.
+ */
+export async function buildPluginActions(
+  agent: AgentInfo,
+  plugin: PluginEntry,
+  seenMarketplaces: Set<string> = new Set(),
+): Promise<Action[]> {
   if (!agent.supports.plugins || !agent.pluginMethod) {
     return [{ kind: 'skip', label: `Plugins → ${agent.label}`, reason: 'agent has no plugin system' }];
   }
+  const firstUse = !seenMarketplaces.has(marketplaceName(plugin));
+  seenMarketplaces.add(marketplaceName(plugin));
+  const staging = firstUse ? await buildBundledStagingActions(plugin) : [];
   switch (agent.pluginMethod) {
     case 'claude-cli':
-      return buildClaudePluginActions(plugin);
+      return [...staging, ...(await buildClaudePluginActions(plugin, firstUse, plugin.bundled))];
     case 'codex-toml':
-      return [await buildCodexPluginAction(agent, plugin)];
+      return [...staging, await buildCodexPluginAction(agent, plugin)];
   }
 }
 
 // ---------------------------------------------------------------------------
 // Claude Code
 // ---------------------------------------------------------------------------
-function buildClaudePluginActions(plugin: PluginEntry): Action[] {
-  if (!claudeAvailable()) return [];
+/** What `claude plugin marketplace add` receives: the staged dir for bundled ones, else the repo. */
+function claudeMarketplaceSource(plugin: PluginEntry): string {
+  return plugin.bundled ? bundledInstallPath(plugin) : plugin.marketplace;
+}
+
+/**
+ * Claude CLI actions. Without the CLI: [] (the caller falls back), except for a
+ * bundled marketplace, whose settings fallback is returned here so its staged
+ * files are never mistaken for "nothing to do".
+ */
+async function buildClaudePluginActions(plugin: PluginEntry, addMarketplace: boolean, bundled: boolean): Promise<Action[]> {
+  if (!claudeAvailable()) return bundled ? [await buildPluginSettingsFallbackAction(plugin)] : [];
 
   const actions: Action[] = [];
-  if (!plugin.builtin) {
+  if (!plugin.builtin && addMarketplace) {
+    const source = claudeMarketplaceSource(plugin);
     actions.push({
       kind: 'exec',
-      label: `Marketplace ${plugin.marketplace}`,
+      label: `Marketplace ${plugin.bundled ? tildify(source) : source}`,
       cmd: 'claude',
-      args: ['plugin', 'marketplace', 'add', plugin.marketplace],
+      args: ['plugin', 'marketplace', 'add', source],
       timeout: 120_000,
       tolerant: true,
     });
@@ -95,6 +173,12 @@ function buildClaudePluginActions(plugin: PluginEntry): Action[] {
     });
   }
   return actions;
+}
+
+/** settings.json `extraKnownMarketplaces` source: a directory for bundled packs, else GitHub. */
+function settingsMarketplaceSource(plugin: PluginEntry): Record<string, string> {
+  if (plugin.bundled) return { source: 'directory', path: bundledInstallPath(plugin) };
+  return { source: 'github', repo: plugin.marketplace.replace(/\.git$/, '') };
 }
 
 /** Fallback: merge marketplace + enabled plugins into ~/.claude/settings.json. */
@@ -120,9 +204,8 @@ export async function buildPluginSettingsFallbackAction(plugin: PluginEntry): Pr
   const mpName = marketplaceName(plugin);
 
   if (!plugin.builtin) {
-    const repo = plugin.marketplace.replace(/\.git$/, '');
     const ekm = isRecord(root.extraKnownMarketplaces) ? { ...root.extraKnownMarketplaces } : {};
-    ekm[mpName] = { source: { source: 'github', repo } };
+    ekm[mpName] = { source: settingsMarketplaceSource(plugin) };
     root.extraKnownMarketplaces = ekm;
   }
 
@@ -181,7 +264,9 @@ async function buildCodexPluginAction(agent: AgentInfo, plugin: PluginEntry): Pr
 
   const patch: Record<string, unknown> = {};
   if (wantMarketplace) {
-    patch.marketplaces = { [mpName]: { source_type: 'git', source: marketplaceGitUrl(plugin) } };
+    patch.marketplaces = { [mpName]: plugin.bundled
+      ? { source_type: 'local', source: bundledInstallPath(plugin) }
+      : { source_type: 'git', source: marketplaceGitUrl(plugin) } };
   }
   if (wantPlugins.length) {
     patch.plugins = Object.fromEntries(wantPlugins.map((ref) => [ref, { enabled: true }]));

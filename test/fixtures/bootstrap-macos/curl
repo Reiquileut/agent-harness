@@ -1,0 +1,6 @@
+#!/bin/sh
+# Safety net for scripts/e2e/72-bootstrap-macos.sh: shadows the real curl on the suite's PATH, so a
+# bootstrap that wrongly went past a refusal still downloads nothing. Logs argv, always fails.
+[ -n "${FAKE_NET_LOG:-}" ] && echo "curl argv=$*" >> "$FAKE_NET_LOG"
+echo "fake curl: downloads are disabled in tests (argv: $*)" >&2
+exit 1

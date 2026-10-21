@@ -1,0 +1,6 @@
+#!/bin/sh
+# Safety net for scripts/e2e/72-bootstrap-macos.sh: shadows the real npm on the suite's PATH, so a
+# bootstrap that wrongly went past a refusal still installs nothing. Logs argv, always fails.
+[ -n "${FAKE_NET_LOG:-}" ] && echo "npm argv=$*" >> "$FAKE_NET_LOG"
+echo "fake npm: installs are disabled in tests (argv: $*)" >&2
+exit 1

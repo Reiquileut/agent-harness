@@ -23,6 +23,7 @@ import {
   isRecord,
   jsonStringify,
   log,
+  mergeManagedBlock,
   parseToml,
   readText,
   stringifyToml,
@@ -151,6 +152,36 @@ async function buildEnsurePrefix(file: PresetFile, label: string): Promise<Actio
   return { kind: 'file', label, path: dest, before, after: `${asset.trimEnd()}\n\n${before}` };
 }
 
+/** Markers of a preset's managed block. Example: managedBlockMarkers('x') → ['<!-- BEGIN agent-harness:x -->', …]. */
+export function managedBlockMarkers(presetId: string): [string, string] {
+  return [`<!-- BEGIN agent-harness:${presetId} -->`, `<!-- END agent-harness:${presetId} -->`];
+}
+
+/** True when `existing` holds the asset outside our markers (a copy made before v1.7). */
+function holdsUnmanagedCopy(existing: string, asset: string, begin: string): boolean {
+  if (existing.includes(begin)) return false;
+  const signature = asset.split(/\r?\n/).find((line) => line.trim())?.trim();
+  return Boolean(signature) && existing.split(/\r?\n/).some((line) => line.trim() === signature);
+}
+
+/**
+ * managed-block (v1.7.0): keep the asset between agent-harness markers in a file
+ * that may hold other content. Why: `copy keep` left the owner's rules out of a
+ * ~/.codex/AGENTS.md that already held only the post-install manifest (older
+ * harness runs), and never refreshed them. A hand-made copy is left alone.
+ */
+async function buildManagedBlock(presetId: string, file: PresetFile, label: string): Promise<Action> {
+  const asset = await readAsset(file);
+  if (asset == null) return { kind: 'note', level: 'warn', label, message: `Preset asset missing: ${file.asset}` };
+  const dest = expandHome(file.dest);
+  const before = await readText(dest);
+  const [begin, end] = managedBlockMarkers(presetId);
+  if (before != null && holdsUnmanagedCopy(before, asset, begin)) {
+    return { kind: 'skip', label, reason: `${tildify(dest)} holds an unmanaged copy (delete it to let agent-harness manage it)` };
+  }
+  return { kind: 'file', label, path: dest, before, after: mergeManagedBlock(before, asset, begin, end) };
+}
+
 /**
  * Build the action for ONE preset file. Callers must run it before building
  * the next file: two files with the same `dest` (a base preset plus its
@@ -171,6 +202,8 @@ export async function buildPresetFileAction(preset: Pick<PresetEntry, 'id' | 'la
       return buildMergeToml(file, label);
     case 'ensure-prefix':
       return buildEnsurePrefix(file, label);
+    case 'managed-block':
+      return buildManagedBlock(preset.id, file, label);
   }
 }
 

@@ -8,9 +8,14 @@ ligado às suas contas ou clientes fica num overlay privado (ver o fim).
 - Claude Code **não lê `AGENTS.md` quando existe `CLAUDE.md`**. Por isso o arquivo
   real é sempre `AGENTS.md` e o `CLAUDE.md` é um stub com `@AGENTS.md` mais um
   comentário HTML explicando por quê.
-- **Global:** o preset `codex-global-instructions` grava `~/.codex/AGENTS.md`
-  (template, mantido se já existir) e garante `@~/.codex/AGENTS.md` em
-  `~/.claude/CLAUDE.md` (op `ensure-prefix`: só prepende o import se faltar).
+- **Global:** o preset `codex-global-instructions` grava o template em
+  `~/.codex/AGENTS.md` dentro de um bloco gerenciado
+  (`<!-- BEGIN/END agent-harness:codex-global-instructions -->`, op `managed-block`):
+  rodar de novo atualiza só o bloco e preserva o resto do arquivo (o manifesto e o
+  bloco do ai-memory convivem com ele). Um arquivo que já tem uma cópia sem marcação
+  é pulado com aviso; apague a cópia para o harness passar a gerenciá-la. Também
+  garante `@~/.codex/AGENTS.md` em `~/.claude/CLAUDE.md` (op `ensure-prefix`: só
+  prepende o import se faltar).
 - **Por repositório:** `agent-harness scaffold` escreve o template completo em
   `AGENTS.md` e o stub em `CLAUDE.md`. `--with-claude-md` implica `AGENTS.md`.
 - Edite sempre o `AGENTS.md`; o `CLAUDE.md` não precisa de manutenção.
@@ -43,6 +48,37 @@ O template carrega o padrão. Destaques:
   (um briefing completo, um resultado). Nunca retome com `SendMessage` um agente
   ocioso há mais de 4 min; abra um novo com briefing compacto. Comandos longos
   (> 3 min) rodam no orquestrador, em background.
+
+## Máquina nova, mesmo setup
+
+- Cada entrada do catálogo (e do overlay) tem `default`. As marcadas formam o setup
+  do dia a dia: o menu já abre com elas marcadas (Enter instala) e
+  `init -y --defaults` instala só elas, mais o que as flags de item somarem.
+- `-y` sem `--defaults` continua instalando só o que as flags pedem (como na v1.6).
+- Máquina zerada: `bootstrap/macos.sh` ou `bootstrap/ubuntu.sh` com `--yes` instalam os
+  pré-requisitos e rodam o `init -y --defaults`, **sem pedir segredo**. Logins, o servidor do
+  ai-memory e os tokens vêm depois; um novo `init -y --defaults --overlay …` acrescenta o que
+  esperava por eles ([docs/macos.md](macos.md), [docs/linux.md](linux.md)).
+- Ao adotar algo novo numa máquina, traga para o catálogo com `default: true`; o que
+  for arriscado (MCP que escreve numa conta paga) fica sem a marca.
+
+## Hooks globais, mods e status line
+
+- **Higiene de disco/Docker** (preset `docker-disk-hygiene`, Claude Code): no
+  SessionStart/SubagentStart injeta a regra curta; no PreToolUse nega `docker rm`
+  sem `-v`, `docker volume prune -a`, `docker system prune --volumes` e processo
+  longo com saída redirecionada para arquivo sem limite. Falha aberto.
+- **Leitura inicial do ai-memory no Codex** (vem com a integração `ai-memory`): hook
+  SessionStart em `~/.codex/hooks.json` que injeta as instruções de
+  `~/.codex/hooks/ai-memory-startup.txt`. No Claude Code o mesmo papel é do mod
+  `ai-memory-first-read`.
+- **Mods do Claude Code** (`mod-*`): marketplace local `agent-harness-mods`, copiado
+  para `~/.claude/mods` e registrado pelo caminho. Um arquivo editado lá é mantido
+  numa nova execução; `--force` restaura o original do repositório.
+- **Status line:** `~/.claude/statusline.ts`, rodada com `node` (sem bash nem
+  python, então funciona igual no macOS, no Linux e no Windows).
+- Hooks, mods e status line são TypeScript rodado direto pelo Node: precisam de
+  Node >= 22.18.
 
 ## ai-memory por repositório
 

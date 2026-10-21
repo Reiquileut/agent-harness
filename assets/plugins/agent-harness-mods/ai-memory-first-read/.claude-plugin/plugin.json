@@ -1,0 +1,1 @@
+{ "name": "ai-memory-first-read", "version": "0.1.0", "description": "Na primeira mensagem de cada sessão, faz o Claude ler o ai-memory do projeto (ou iniciar a primeira memória se o projeto for novo)." }

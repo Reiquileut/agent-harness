@@ -62,6 +62,8 @@ export interface InitOptions {
   /** Private overlay catalogs (dirs or git URLs); AGENT_HARNESS_OVERLAY adds more. */
   overlay: string[];
   all: boolean;
+  /** Install every catalog entry flagged `default` (plus any item flag). v1.7.0. */
+  defaults: boolean;
   /** Record the installed inventory in each agent's global instructions file. */
   manifest: boolean;
   yes: boolean;
@@ -82,7 +84,11 @@ export interface Selection {
   repo?: ScaffoldPlan;
 }
 
-/** Resolve a selection purely from flags (non-interactive). */
+/**
+ * Resolve a selection purely from flags (non-interactive). `--all` takes
+ * everything; otherwise the named ids, plus the `default` entries when
+ * `--defaults` is set (the owner's live setup, v1.7.0).
+ */
 function selectionFromFlags(catalog: CatalogData, opts: InitOptions): Selection {
   const agentIds = opts.agent.length
     ? opts.agent
@@ -91,8 +97,8 @@ function selectionFromFlags(catalog: CatalogData, opts: InitOptions): Selection 
       : detectInstalledAgentIds();
 
   const agents = uniqueAgents(agentIds);
-  const pick = <T extends { id: string }>(all: T[], ids: string[]): T[] =>
-    opts.all ? all : all.filter((x) => ids.includes(x.id));
+  const pick = <T extends { id: string; default: boolean }>(all: T[], ids: string[]): T[] =>
+    opts.all ? all : all.filter((x) => ids.includes(x.id) || (opts.defaults && x.default));
 
   return {
     agents,
@@ -123,6 +129,7 @@ function isInteractive(opts: InitOptions): boolean {
   if (opts.yes) return false;
   const explicit =
     opts.all ||
+    opts.defaults ||
     opts.agent.length > 0 ||
     opts.mcp.length > 0 ||
     opts.skill.length > 0 ||
@@ -237,8 +244,10 @@ async function configureAgent(
   // Plugins (Claude Code via CLI, Codex via config.toml)
   const pluginsHere = sel.plugins.filter((p) => pluginAppliesTo(p, agent.id));
   if (agent.supports.plugins) {
+    // One staging + marketplace add per marketplace: the 4 mods share one.
+    const seenMarketplaces = new Set<string>();
     for (const p of pluginsHere) {
-      const actions = await buildPluginActions(agent, p);
+      const actions = await buildPluginActions(agent, p, seenMarketplaces);
       if (actions.length === 0) {
         // claude CLI not on PATH -> settings fallback
         await runAction(await buildPluginSettingsFallbackAction(p));

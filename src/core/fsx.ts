@@ -95,12 +95,14 @@ export async function readText(p: string): Promise<string | null> {
 }
 
 /** Atomic write (temp + rename); creates parent dirs. No-op under --dry-run. */
-export async function atomicWrite(p: string, content: string): Promise<void> {
+export async function atomicWrite(p: string, content: string, executable = false): Promise<void> {
   const target = expandHome(p);
   if (ctx.dryRun) return;
   await fs.mkdir(path.dirname(target), { recursive: true });
   const tmp = `${target}.${process.pid}.${Date.now()}.tmp`;
   await fs.writeFile(tmp, content, 'utf8');
+  // Windows has no execute bit; elsewhere a #! script must stay runnable.
+  if (executable && process.platform !== 'win32') await fs.chmod(tmp, 0o755);
   await fs.rename(tmp, target);
 }
 

@@ -31,7 +31,7 @@ chk "integ: template existed before instructions" 'grep -q "target-had-template=
 chk "integ: token reached the CLI via env"    'grep -q "token=set" "$LOG_I"'
 chk "integ: token never printed"              '! echo "$OUT_I" | grep -q "$SECRET_TOKEN"'
 chk "integ: token never written under HOME"   '! grep -rq "$SECRET_TOKEN" "$HI"'
-chk "integ: ai-memory block before manifest"  '[ "$(grep -n "ai-memory:start" "$HI/.codex/AGENTS.md" | cut -d: -f1)" -lt "$(grep -n "BEGIN agent-harness" "$HI/.codex/AGENTS.md" | cut -d: -f1)" ]'
+chk "integ: ai-memory block before manifest"  '[ "$(grep -n "ai-memory:start" "$HI/.codex/AGENTS.md" | cut -d: -f1)" -lt "$(grep -n "BEGIN agent-harness -->" "$HI/.codex/AGENTS.md" | cut -d: -f1)" ]'
 chk "integ: claude native memory off"         '[ "$(jget "$HI/.claude/settings.json" autoMemoryEnabled)" = "false" ] && [ "$(jget "$HI/.claude/settings.json" autoDreamEnabled)" = "false" ]'
 chk "integ: manifest lists integrations"      'grep -q "Integrations" "$HI/.codex/AGENTS.md" && grep -q "ai-memory" "$HI/.codex/AGENTS.md"'
 

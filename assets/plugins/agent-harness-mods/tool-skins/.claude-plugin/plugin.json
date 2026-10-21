@@ -1,0 +1,6 @@
+{
+  "name": "tool-skins",
+  "version": "0.1.0",
+  "description": "Redesenha as linhas de tool call com ícones por ferramenta, cores por tipo (leitura, edição, criação) e 3 temas trocáveis com /skin.",
+  "types": "./types/index.d.ts"
+}

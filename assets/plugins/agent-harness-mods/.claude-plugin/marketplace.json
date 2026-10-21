@@ -1,0 +1,31 @@
+{
+  "name": "agent-harness-mods",
+  "owner": {
+    "name": "reiquileut"
+  },
+  "metadata": {
+    "description": "Mods do Claude Code distribuídos pelo agent-harness (tool-skins, cache-tax, ai-memory-first-read, savvy)."
+  },
+  "plugins": [
+    {
+      "name": "tool-skins",
+      "source": "./tool-skins",
+      "description": "Redesenha as linhas de tool call com ícones por ferramenta, cores por tipo e 3 temas trocáveis com /skin."
+    },
+    {
+      "name": "cache-tax",
+      "source": "./cache-tax",
+      "description": "Segura o prompt quando o cache do contexto provavelmente expirou e mostra o custo de reprocessamento."
+    },
+    {
+      "name": "ai-memory-first-read",
+      "source": "./ai-memory-first-read",
+      "description": "Lê o ai-memory na primeira mensagem de cada sessão e conduz a primeira memória em projetos novos."
+    },
+    {
+      "name": "savvy",
+      "source": "./savvy",
+      "description": "/savvy-flow divide o pedido em 3-6 helpers em background + revisor; savvy-progress mostra barra, painel Agents e árvore na conversa (desktop e terminal)."
+    }
+  ]
+}

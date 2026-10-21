@@ -1,0 +1,8 @@
+#!/bin/sh
+# Fake Homebrew for scripts/e2e/72-bootstrap-macos.sh: logs argv to $FAKE_BREW_LOG and installs
+# nothing. `brew shellenv` puts this file's own dir on PATH, as the real one does for /opt/homebrew/bin.
+[ -n "${FAKE_BREW_LOG:-}" ] && echo "argv=$*" >> "$FAKE_BREW_LOG"
+if [ "${1:-}" = shellenv ]; then
+  printf 'export PATH="%s:$PATH"\n' "$(cd "$(dirname "$0")" && pwd)"
+fi
+exit 0

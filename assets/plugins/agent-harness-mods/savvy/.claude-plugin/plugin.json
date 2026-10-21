@@ -1,0 +1,7 @@
+{
+  "name": "savvy",
+  "version": "0.1.0",
+  "description": "/savvy-flow plans a request into 3-6 background helpers plus a reviewer; savvy-progress shows them in a band, an Agents panel and the conversation, on desktop and terminal.",
+  "author": { "name": "Thiago Prado" },
+  "types": "./types/index.d.ts"
+}

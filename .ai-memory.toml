@@ -1,0 +1,22 @@
+# Escopo do ai-memory (https://github.com/akitaonrails/ai-memory) para este repo.
+# Escolha do dono em 2026-10-20: usar o projeto que já recebia as capturas deste
+# checkout (default/HarnessInstall), para o escopo não depender do nome da pasta,
+# que muda de máquina para máquina.
+# O repositório é PÚBLICO: nada de URL de servidor, token ou caminho pessoal aqui.
+workspace = "default"
+project = "HarnessInstall"
+
+[capture]
+# Segredo nunca vira memória: a captura sai da máquina para o servidor remoto.
+# Cada padrão aparece na raiz e com `**/`, porque neste glob o `**/` inicial não
+# casa zero pastas (medido em 2026-10-05, ai-memory 2.5.2).
+ignore_paths = [
+  ".env",
+  ".env.*",
+  "**/.env",
+  "**/.env.*",
+  "*.pem",
+  "*.key",
+  "**/*.pem",
+  "**/*.key",
+]

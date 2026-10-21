@@ -11,7 +11,8 @@
       "transport": "http",
       "url": "https://mcp.figma.com/mcp",
       "headers": {},
-      "env": []
+      "env": [],
+      "default": false
     },
     {
       "id": "chrome-devtools",
@@ -22,7 +23,8 @@
         "-y",
         "chrome-devtools-mcp@latest"
       ],
-      "env": []
+      "env": [],
+      "default": true
     },
     {
       "id": "playwright",
@@ -36,7 +38,8 @@
       "agents": [
         "codex",
         "opencode"
-      ]
+      ],
+      "default": true
     },
     {
       "id": "context7",
@@ -51,7 +54,8 @@
       "agents": [
         "codex",
         "opencode"
-      ]
+      ],
+      "default": true
     },
     {
       "id": "upstash-context-7-mcp",
@@ -62,7 +66,8 @@
       "env": [],
       "agents": [
         "codex"
-      ]
+      ],
+      "default": true
     },
     {
       "id": "taskmaster",
@@ -89,7 +94,8 @@
             }
           }
         }
-      }
+      },
+      "default": true
     },
     {
       "id": "lottiefiles-creator",
@@ -100,7 +106,8 @@
         "-y",
         "@lottiefiles/creator-mcp@latest"
       ],
-      "env": []
+      "env": [],
+      "default": false
     },
     {
       "id": "pencil",
@@ -134,7 +141,8 @@
       },
       "platforms": [
         "win32"
-      ]
+      ],
+      "default": true
     },
     {
       "id": "stitch",
@@ -149,7 +157,8 @@
       ],
       "agents": [
         "claude-code"
-      ]
+      ],
+      "default": false
     }
   ],
   "skills": [
@@ -157,13 +166,15 @@
       "id": "anti-ai-slop",
       "label": "Anti-AI-Slop — premium landing/UI design (PT)",
       "source": "local",
-      "skill": "anti-ai-slop"
+      "skill": "anti-ai-slop",
+      "default": true
     },
     {
       "id": "prd",
       "label": "PRD — generate product requirements docs",
       "source": "local",
-      "skill": "prd"
+      "skill": "prd",
+      "default": true
     },
     {
       "id": "impeccable",
@@ -184,49 +195,57 @@
           "claude-code": "claude",
           "codex": "codex"
         }
-      }
+      },
+      "default": true
     },
     {
       "id": "find-skills",
       "label": "Find Skills — discover/install skills from the open ecosystem",
       "source": "local",
-      "skill": "find-skills"
+      "skill": "find-skills",
+      "default": true
     },
     {
       "id": "shadcn",
       "label": "shadcn — manage shadcn/ui components, registries & presets",
       "source": "local",
-      "skill": "shadcn"
+      "skill": "shadcn",
+      "default": true
     },
     {
       "id": "grill-me",
       "label": "Grill Me — relentless plan/design interview (delegates to grilling)",
       "source": "local",
-      "skill": "grill-me"
+      "skill": "grill-me",
+      "default": true
     },
     {
       "id": "grill-with-docs",
       "label": "Grill With Docs — plan grilling that updates CONTEXT.md/ADRs inline",
       "source": "local",
-      "skill": "grill-with-docs"
+      "skill": "grill-with-docs",
+      "default": true
     },
     {
       "id": "grilling",
       "label": "Grilling — the interview engine behind grill-me (mattpocock/skills, MIT)",
       "source": "mattpocock/skills",
-      "skill": "grilling"
+      "skill": "grilling",
+      "default": true
     },
     {
       "id": "domain-modeling",
       "label": "Domain Modeling — sharpen the domain model, GLOSSARY.md and ADRs (mattpocock/skills, MIT)",
       "source": "mattpocock/skills",
-      "skill": "domain-modeling"
+      "skill": "domain-modeling",
+      "default": true
     },
     {
       "id": "paperclip-create-agent",
       "label": "Paperclip Create Agent — governance-aware agent hiring",
       "source": "local",
-      "skill": "paperclip-create-agent"
+      "skill": "paperclip-create-agent",
+      "default": true
     },
     {
       "id": "archify",
@@ -235,7 +254,8 @@
       "skill": "archify",
       "requires": [
         "Node >= 18"
-      ]
+      ],
+      "default": true
     },
     {
       "id": "computer-use",
@@ -244,7 +264,8 @@
       "skill": "computer-use",
       "requires": [
         "Orca desktop app (`orca` on PATH)"
-      ]
+      ],
+      "default": true
     },
     {
       "id": "orca-cli",
@@ -253,7 +274,8 @@
       "skill": "orca-cli",
       "requires": [
         "Orca desktop app (`orca` on PATH)"
-      ]
+      ],
+      "default": true
     },
     {
       "id": "orchestration",
@@ -262,7 +284,8 @@
       "skill": "orchestration",
       "requires": [
         "Orca desktop app (`orca` on PATH)"
-      ]
+      ],
+      "default": true
     }
   ],
   "subagents": [
@@ -270,13 +293,36 @@
       "id": "documentation-auditor",
       "label": "Documentation Auditor — audits docs vs codebase",
       "file": "documentation-auditor.md",
-      "codex_file": "documentation-auditor.toml"
+      "codex_file": "documentation-auditor.toml",
+      "default": true
     },
     {
       "id": "impeccable-manual-edit-applier",
       "label": "Impeccable Manual Edit Applier — applies leased Impeccable copy-edit batches",
       "file": "impeccable-manual-edit-applier.md",
-      "codex_file": "impeccable-manual-edit-applier.toml"
+      "codex_file": "impeccable-manual-edit-applier.toml",
+      "default": true
+    },
+    {
+      "id": "impeccable-asset-producer",
+      "label": "Impeccable Asset Producer — clean raster assets from approved mocks",
+      "file": "impeccable-asset-producer.md",
+      "codex_file": "impeccable-asset-producer.toml",
+      "default": true
+    },
+    {
+      "id": "impeccable-documenter",
+      "label": "Impeccable Documenter — DESIGN.md derived from the shipped build",
+      "file": "impeccable-documenter.md",
+      "codex_file": "impeccable-documenter.toml",
+      "default": true
+    },
+    {
+      "id": "impeccable-finish-reviewer",
+      "label": "Impeccable Finish Reviewer — ordered fixes against the direction contract",
+      "file": "impeccable-finish-reviewer.md",
+      "codex_file": "impeccable-finish-reviewer.toml",
+      "default": true
     }
   ],
   "plugins": [
@@ -290,7 +336,8 @@
         "github",
         "frontend-design",
         "playwright"
-      ]
+      ],
+      "default": true
     },
     {
       "id": "openai-codex",
@@ -299,7 +346,8 @@
       "name": "openai-codex",
       "install": [
         "codex"
-      ]
+      ],
+      "default": true
     },
     {
       "id": "taskmaster",
@@ -308,7 +356,8 @@
       "name": "taskmaster",
       "install": [
         "taskmaster"
-      ]
+      ],
+      "default": true
     },
     {
       "id": "obsidian-skills",
@@ -317,7 +366,8 @@
       "name": "obsidian-skills",
       "install": [
         "obsidian"
-      ]
+      ],
+      "default": true
     },
     {
       "id": "claude-code-warp",
@@ -329,7 +379,8 @@
       "name": "claude-code-warp",
       "install": [
         "warp"
-      ]
+      ],
+      "default": true
     },
     {
       "id": "typesafe-ai",
@@ -338,7 +389,68 @@
       "name": "typesafe-ai",
       "install": [
         "typesafe"
-      ]
+      ],
+      "default": true
+    },
+    {
+      "id": "mod-tool-skins",
+      "label": "Mod tool-skins — ícones e cores por ferramenta nas tool calls, 3 temas com /skin",
+      "agents": [
+        "claude-code"
+      ],
+      "marketplace": "plugins/agent-harness-mods",
+      "name": "agent-harness-mods",
+      "bundled": true,
+      "installPath": "~/.claude/mods",
+      "install": [
+        "tool-skins"
+      ],
+      "default": true
+    },
+    {
+      "id": "mod-cache-tax",
+      "label": "Mod cache-tax — segura o prompt quando o cache expirou e mostra o custo de reprocessar",
+      "agents": [
+        "claude-code"
+      ],
+      "marketplace": "plugins/agent-harness-mods",
+      "name": "agent-harness-mods",
+      "bundled": true,
+      "installPath": "~/.claude/mods",
+      "install": [
+        "cache-tax"
+      ],
+      "default": true
+    },
+    {
+      "id": "mod-ai-memory-first-read",
+      "label": "Mod ai-memory-first-read — lê o ai-memory na 1ª mensagem de cada sessão",
+      "agents": [
+        "claude-code"
+      ],
+      "marketplace": "plugins/agent-harness-mods",
+      "name": "agent-harness-mods",
+      "bundled": true,
+      "installPath": "~/.claude/mods",
+      "install": [
+        "ai-memory-first-read"
+      ],
+      "default": true
+    },
+    {
+      "id": "mod-savvy",
+      "label": "Mod savvy — /savvy-flow divide o pedido em helpers + revisor, com painel de progresso",
+      "agents": [
+        "claude-code"
+      ],
+      "marketplace": "plugins/agent-harness-mods",
+      "name": "agent-harness-mods",
+      "bundled": true,
+      "installPath": "~/.claude/mods",
+      "install": [
+        "savvy"
+      ],
+      "default": true
     },
     {
       "id": "codex-openai-curated",
@@ -358,7 +470,8 @@
         "cloudflare",
         "build-web-apps",
         "codex-security"
-      ]
+      ],
+      "default": true
     },
     {
       "id": "codex-openai-bundled",
@@ -376,7 +489,8 @@
         "visualize",
         "code-review",
         "codex-app-tools"
-      ]
+      ],
+      "default": true
     },
     {
       "id": "codex-openai-primary-runtime",
@@ -392,13 +506,14 @@
         "presentations",
         "pdf",
         "template-creator"
-      ]
+      ],
+      "default": true
     }
   ],
   "presets": [
     {
       "id": "claude-settings",
-      "label": "Claude settings — xhigh effort (Opus 5.5 xhigh), thinking, agent teams, auto mode, permissions, voice, status line",
+      "label": "Claude settings — xhigh effort (per-model: Opus 5.5 medium), thinking, agent teams, auto mode, permissions, voice, status line",
       "agents": [
         "claude-code"
       ],
@@ -410,13 +525,8 @@
         },
         {
           "op": "copy",
-          "asset": "presets/claude/statusline-command.sh",
-          "dest": "~/.claude/statusline-command.sh"
-        },
-        {
-          "op": "copy",
-          "asset": "presets/claude/statusline-data.py",
-          "dest": "~/.claude/statusline-data.py"
+          "asset": "presets/claude/statusline.ts",
+          "dest": "~/.claude/statusline.ts"
         },
         {
           "op": "merge-json",
@@ -426,11 +536,12 @@
             "win32"
           ]
         }
-      ]
+      ],
+      "default": true
     },
     {
       "id": "codex-config",
-      "label": "Codex config — gpt-6.1-sol, xhigh, priority tier, on-request approvals, workspace-write + network, multi-agent (native memories off)",
+      "label": "Codex config — gpt-6.1-sol, low effort, standard tier, on-request approvals, workspace-write + network, multi-agent (native memories off)",
       "agents": [
         "codex"
       ],
@@ -448,17 +559,17 @@
             "win32"
           ]
         }
-      ]
+      ],
+      "default": true
     },
     {
       "id": "codex-global-instructions",
       "label": "Global instructions — ~/.codex/AGENTS.md (Clean Code for Agents, canonical) + ~/.claude/CLAUDE.md @import",
       "files": [
         {
-          "op": "copy",
+          "op": "managed-block",
           "asset": "templates/clean-code-for-agents.md",
           "dest": "~/.codex/AGENTS.md",
-          "keep": true,
           "agents": [
             "codex",
             "claude-code"
@@ -472,7 +583,8 @@
             "claude-code"
           ]
         }
-      ]
+      ],
+      "default": true
     },
     {
       "id": "no-ai-attribution",
@@ -496,7 +608,33 @@
           "asset": "presets/claude/no-ai-attribution.json",
           "dest": "~/.claude/settings.json"
         }
-      ]
+      ],
+      "default": true
+    },
+    {
+      "id": "docker-disk-hygiene",
+      "label": "Higiene de disco/Docker — regra na sessão + hook que barra docker rm sem -v, prunes de volume e logs sem limite",
+      "agents": [
+        "claude-code"
+      ],
+      "files": [
+        {
+          "op": "copy",
+          "asset": "hooks/claude/higiene-docker-disco.ts",
+          "dest": "~/.claude/hooks/higiene-docker-disco.ts"
+        },
+        {
+          "op": "copy",
+          "asset": "hooks/claude/higiene-docker-disco.test.ts",
+          "dest": "~/.claude/hooks/higiene-docker-disco.test.ts"
+        },
+        {
+          "op": "merge-json",
+          "asset": "presets/claude/docker-disk-hygiene.json",
+          "dest": "~/.claude/settings.json"
+        }
+      ],
+      "default": true
     }
   ],
   "integrations": [
@@ -559,8 +697,63 @@
           "agents": [
             "claude-code"
           ]
+        },
+        {
+          "op": "copy",
+          "asset": "hooks/codex/ai-memory-startup.ts",
+          "dest": "~/.codex/hooks/ai-memory-startup.ts",
+          "agents": [
+            "codex"
+          ]
+        },
+        {
+          "op": "copy",
+          "asset": "hooks/codex/ai-memory-startup.txt",
+          "dest": "~/.codex/hooks/ai-memory-startup.txt",
+          "agents": [
+            "codex"
+          ]
+        },
+        {
+          "op": "merge-json",
+          "asset": "presets/codex/ai-memory-startup-hooks.json",
+          "dest": "~/.codex/hooks.json",
+          "agents": [
+            "codex"
+          ]
         }
-      ]
+      ],
+      "default": true
+    },
+    {
+      "id": "twg-skills",
+      "label": "TWG (Atlassian Teamwork Graph) skills — Jira, Confluence, Rovo — installed by your own twg CLI",
+      "bin": "twg",
+      "installHint": "Install the Atlassian Teamwork Graph CLI and run `twg setup` once (login + skills), then re-run. The skills are Atlassian-licensed, so this repo never bundles them.",
+      "env": [],
+      "requiredEnv": [],
+      "agentNames": {
+        "claude-code": "claude",
+        "codex": "codex",
+        "opencode": "opencode"
+      },
+      "perAgent": [],
+      "once": [
+        {
+          "cmd": "twg",
+          "args": [
+            "skills",
+            "install",
+            "-y",
+            "--agent",
+            "claude",
+            "--agent",
+            "opencode"
+          ]
+        }
+      ],
+      "files": [],
+      "default": true
     }
   ],
   "templates": {

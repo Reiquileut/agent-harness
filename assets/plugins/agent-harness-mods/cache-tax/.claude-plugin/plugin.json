@@ -1,0 +1,15 @@
+{
+  "name": "cache-tax",
+  "version": "0.1.0",
+  "description": "Segura o prompt quando o cache do contexto provavelmente expirou e mostra o custo de reprocessamento; keep-alive opcional para a sessão e para subagentes sonnet/haiku ociosos.",
+  "author": { "name": "reiquileut" },
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "cacheTtlMinutes": { "type": "number", "title": "TTL do cache da sessão (min)", "description": "Depois de quantos minutos sem request o cache da sessão é dado como expirado.", "default": 60 },
+    "keepAlive": { "type": "boolean", "title": "Keep-alive da sessão", "description": "Envia um request mínimo pouco antes do cache da sessão expirar.", "default": false },
+    "keepAliveMaxPings": { "type": "number", "title": "Máximo de pings por sessão", "description": "Limite de pings de keep-alive da sessão principal.", "default": 3 },
+    "subagentKeepAlive": { "type": "boolean", "title": "Keep-alive de subagentes sonnet/haiku", "description": "Mantém o cache de subagentes sonnet/haiku ociosos vivo.", "default": true },
+    "subagentTtlMinutes": { "type": "number", "title": "TTL do cache de subagentes (min)", "description": "TTL do cache dos subagentes.", "default": 5 },
+    "subagentKeepAliveWindowMinutes": { "type": "number", "title": "Janela de keep-alive de subagentes (min)", "description": "Por quanto tempo após a última atividade real um subagente ocioso continua recebendo pings.", "default": 30 }
+  }
+}

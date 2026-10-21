@@ -1,0 +1,7 @@
+#!/bin/sh
+# Fake uname for scripts/e2e/72-bootstrap-macos.sh: a Mac on Apple Silicon unless the test
+# sets FAKE_UNAME_S (kernel name) or FAKE_UNAME_M (machine).
+case "${1:-}" in
+  -m) echo "${FAKE_UNAME_M:-arm64}" ;;
+  *) echo "${FAKE_UNAME_S:-Darwin}" ;;
+esac

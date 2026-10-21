@@ -10,7 +10,7 @@
     }
   ],
   "skills": [
-    { "id": "fixture-private-skill", "label": "Fixture private skill", "source": "local", "skill": "fixture-private-skill" },
+    { "id": "fixture-private-skill", "label": "Fixture private skill", "source": "local", "skill": "fixture-private-skill", "default": true },
     { "id": "prd", "label": "PRD (overlay override)", "source": "local", "skill": "prd" }
   ],
   "subagents": [

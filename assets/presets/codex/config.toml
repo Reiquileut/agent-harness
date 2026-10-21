@@ -5,14 +5,15 @@
 # Windows-only tables live in config.windows.toml (applied only on win32).
 # features.memories = false: long-term memory comes from ai-memory (catalog integration),
 # not Codex's native memories — the two would capture the same sessions twice.
+# Values re-synced with the live setup on 2026-10-20 (effort low, standard service tier).
 
 model = "gpt-6.1-sol"
-model_reasoning_effort = "xhigh"
+model_reasoning_effort = "low"
 personality = "pragmatic"
 approval_policy = "on-request"
 approvals_reviewer = "guardian_subagent"
 sandbox_mode = "workspace-write"
-service_tier = "priority"
+service_tier = "default"
 
 [features]
 multi_agent = true
@@ -33,6 +34,10 @@ git-show-sidebar-pr-icons = true
 keepRemoteControlAwakeWhilePluggedIn = true
 show-context-window-usage = true
 followUpQueueMode = "queue"
+dictationDictionary = []
+conversationDetailMode = "STEPS_PROSE"
+avatar-overlay-pet-visible = false
+external-agent-import-sync-enabled = true
 
 [desktop.open-in-target-preferences]
 global = "cursor"
