@@ -17,6 +17,11 @@ export interface FileAction {
   path: string;
   before: string | null;
   after: string;
+  /**
+   * POSIX only: mark the written file executable. A bundled `#!` script would
+   * otherwise land as 0644 and fail when an agent runs it directly (v1.7.0).
+   */
+  executable?: boolean;
 }
 
 /** Byte-for-byte copy of `src` to `dest` (binary-safe: images, fonts, archives). */
@@ -87,7 +92,7 @@ export async function runAction(action: Action): Promise<ApplyResult> {
         log.plain(`${INDENT}${dryTag()}${verb} ${tildify(action.path)} ${pc.dim(`— ${action.label}`)}`);
         return { status: 'written', label: action.label, detail: `${verb} ${action.path}` };
       }
-      await atomicWrite(action.path, action.after);
+      await atomicWrite(action.path, action.after, action.executable);
       log.success(`${INDENT}${verb === 'create' ? 'created' : 'updated'} ${tildify(action.path)} ${pc.dim(`— ${action.label}`)}`);
       return { status: 'written', label: action.label };
     }

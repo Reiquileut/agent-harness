@@ -1,0 +1,52 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node",
+            "args": [
+              "{{HOME}}/.claude/hooks/higiene-docker-disco.ts"
+            ],
+            "timeout": 10,
+            "statusMessage": "Regra de disco/Docker"
+          }
+        ]
+      }
+    ],
+    "SubagentStart": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node",
+            "args": [
+              "{{HOME}}/.claude/hooks/higiene-docker-disco.ts"
+            ],
+            "timeout": 10,
+            "statusMessage": "Regra de disco/Docker"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash|PowerShell",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node",
+            "args": [
+              "{{HOME}}/.claude/hooks/higiene-docker-disco.ts"
+            ],
+            "timeout": 10,
+            "statusMessage": "Conferindo higiene de disco/Docker"
+          }
+        ]
+      }
+    ]
+  }
+}

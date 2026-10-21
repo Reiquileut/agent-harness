@@ -149,6 +149,22 @@ rate limiting · retry with exponential backoff · circuit breaker · aggressive
 timeouts · graceful degradation/fallback · input validation at all boundaries ·
 idempotency keys on mutations · health-check endpoint · feature flags on risky code.
 
+## Docker hygiene (all projects)
+Why: throwaway test images with unique tags (`*-regressao-<sha>`, `*-validacao-<date>`)
+filled ~22 GB of disk in one day; Docker's disk file does not shrink on its own. User decision, 2026-10-11.
+- Throwaway/verification images: reuse a **fixed tag** (`<projeto>-validacao:candidato`) so
+  each build replaces the last, or `docker rmi -f` your own tags when done.
+- Tests/scripts that build images clean up in `finally`/`trap`: containers, volumes **and**
+  images (`docker compose down --volumes --rmi local`).
+- Never `docker volume prune` or `docker system prune --volumes`: volumes hold real databases.
+- Remove test containers **with `-v`** (`docker rm -f -v <name>`): Postgres/Redis/MinIO/LocalStack
+  declare `VOLUME`, so `rm -f` alone orphans an anonymous volume per run (one project's tests left 120 / 4.2 GB
+  in 3 days, 2026-10-16). Orphan anonymous volumes (`-f dangling=true -f label=com.docker.volume.anonymous`) are safe to remove.
+- Long-running agent processes (dev servers, workers, watch): never redirect output to an unbounded
+  file (`> %TEMP%\x.log`); stop them when the task ends and before stopping Docker. Why: a project's
+  `pnpm dev` left running wrote a 19 GB log in 11 h when its queue went down (2026-10-16).
+- Queue/poll loops need a sleep with backoff in the `catch`; a bare `while(!stopped){try{…}catch{log}}` turns an outage into GB of logs.
+
 ## Model routing — delegate to cheaper subagents (default, all projects)
 Goal: cut cost and speed up delivery. The orchestrator (**Opus 5.5** daily driver, or
 **Fable 5.1**) plans, decides, integrates, and reviews. It delegates execution to
@@ -174,6 +190,26 @@ to harnesses with model selection (Claude Code). Source: anthropic.com/claude/* 
   exceeds the savings.
 - The orchestrator **verifies subagent output** before reporting it as done, and the reply
   states which model handled which subtask.
+
+### When to delegate — decision checklist (user decision, 2026-10-19)
+Delegate a subtask only if **all** hold; otherwise do it in the orchestrator:
+1. It has a clear goal + acceptance criteria writable in one brief (no back-and-forth needed).
+2. It doesn't need the conversation's context, or that context fits in the brief.
+3. It is not trivial (more than ~2 tool calls) and runs in < 3 min.
+4. It isn't in the "keep in the orchestrator" list above.
+Then pick the tier: mechanical/high-volume/search/extract/short command → **Haiku**;
+implement/fix/review/test/draft with clear criteria → **Sonnet**; anything still
+ambiguous → stay on **Opus** (orchestrator). Fable as orchestrator only per the table.
+
+### How to delegate — mechanics
+- `Agent` with a non-fork `subagent_type` (`general-purpose`, `Explore` for read-only
+  search, `Plan` for planning) + `model: "haiku"|"sonnet"`. `fork` ignores `model`.
+- Brief template: goal · exact files/paths · constraints (project rules that apply) ·
+  acceptance criteria · output format (compact: diff + summary, or a fixed list).
+- Independent subtasks → several `Agent` calls in **one** message (parallel).
+  Dependent ones → sequential, the next spawned only after the previous returns.
+- Review the output on return; failed → fix in orchestrator or fresh agent one tier up.
+- Final reply lists `subtask → model`.
 
 ### Cache discipline (subagent prompt-cache TTL = 5 min)
 Why: a cache read costs ~0.1x input; once a subagent idles > 5 min its whole context is

@@ -13,8 +13,8 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
-        # 22 = current LTS floor (the commit-guard hook needs >= 22.18 for native
-        # type stripping); Node 20 reached end of life in April 2026.
+        # 22 = current LTS floor (the hooks, mods and status line need >= 22.18 for
+        # native type stripping); Node 20 reached end of life in April 2026.
         node: [22, 24]
     steps:
       - uses: actions/checkout@v4
@@ -39,8 +39,8 @@ jobs:
       - name: Build
         run: pnpm build
 
-      - name: Commit-guard hook tests
-        run: node --test assets/hooks/claude/bloquear-mencao-claude-commit.test.ts
+      - name: Hook and status line tests
+        run: pnpm test:hooks
 
       - name: Smoke (dry-run, non-interactive)
         shell: bash

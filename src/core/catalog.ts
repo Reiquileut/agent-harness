@@ -30,6 +30,14 @@ const OriginFields = {
 };
 
 /**
+ * `default: true` marks what the owner's machines run (v1.7.0): the interactive
+ * menu opens with it checked and `init --defaults` installs it, so a fresh
+ * machine reproduces the live setup with one Enter. A bare `-y` still installs
+ * only what its flags name.
+ */
+const DefaultFlag = { default: z.boolean().default(false) };
+
+/**
  * Per-agent tweaks for one MCP entry, keyed by agent id. Lets a single catalog
  * entry describe a server whose launch differs per agent (e.g. Pencil takes
  * `--agent claudeCodeCLI` / `codexCLI` / `openCodeCLI`) or that needs
@@ -55,6 +63,7 @@ const McpHttpSchema = z.object({
   /** Restrict this MCP to specific OSes (omit = all). */
   platforms: PlatformsSchema,
   overrides: z.record(z.string(), McpAgentOverrideSchema).default({}),
+  ...DefaultFlag,
   ...OriginFields,
 });
 
@@ -70,6 +79,7 @@ const McpStdioSchema = z.object({
   /** Restrict this MCP to specific OSes (omit = all), e.g. Pencil's Windows .exe. */
   platforms: PlatformsSchema,
   overrides: z.record(z.string(), McpAgentOverrideSchema).default({}),
+  ...DefaultFlag,
   ...OriginFields,
 });
 
@@ -101,6 +111,7 @@ const SkillSchema = z.object({
   installer: SkillInstallerSchema.optional(),
   /** Restrict this skill to specific OSes (omit = all). */
   platforms: PlatformsSchema,
+  ...DefaultFlag,
   ...OriginFields,
 });
 
@@ -111,6 +122,7 @@ const SubagentSchema = z.object({
   file: z.string().min(1),
   /** Codex variant: filename inside assets/agents/ (TOML), copied verbatim. Omit = not offered to Codex. */
   codex_file: z.string().optional(),
+  ...DefaultFlag,
   ...OriginFields,
 });
 
@@ -136,6 +148,15 @@ const PluginSchemaRaw = z.object({
    * `openai-bundled`, …): skip the marketplace step and only enable the plugins.
    */
   builtin: z.boolean().default(false),
+  /**
+   * The marketplace ships inside this repo (`marketplace` = an assets-relative
+   * dir with .claude-plugin/marketplace.json — the owner's Claude Code mods). It
+   * is staged into `installPath` and registered by that local path; a file the
+   * user edited there is kept unless --force (mods are developed in place).
+   */
+  bundled: z.boolean().default(false),
+  installPath: z.string().optional(),
+  ...DefaultFlag,
   ...OriginFields,
 });
 
@@ -146,6 +167,8 @@ const PluginSchema = PluginSchemaRaw.transform((p) => ({
   message: 'plugin needs a `marketplace` unless `builtin` is true',
 }).refine((p) => p.builtin ? Boolean(p.name) : true, {
   message: 'builtin plugins need an explicit marketplace `name`',
+}).refine((p) => !p.bundled || (Boolean(p.installPath) && Boolean(p.name) && !p.builtin), {
+  message: 'bundled plugins need `installPath` and `name`, and cannot be `builtin`',
 });
 
 /**
@@ -156,10 +179,14 @@ const PluginSchema = PluginSchemaRaw.transform((p) => ({
  * unless --force). `ensure-prefix` writes the asset when the destination is
  * missing, or prepends it when the destination lacks the asset's first line
  * (the `@~/.codex/AGENTS.md` import in a CLAUDE.md an older run left without
- * it). `{{HOME}}` inside an asset expands to the user's home dir.
+ * it). `managed-block` (v1.7.0) keeps the asset between agent-harness markers,
+ * replaced in place on every run, so a file that already holds other content
+ * (the post-install manifest) still gets it; a copy that predates the markers —
+ * the asset's first line present outside them — is left alone. `{{HOME}}`
+ * inside an asset expands to the user's home dir.
  */
 const PresetFileSchema = z.object({
-  op: z.enum(['merge-json', 'merge-toml', 'copy', 'ensure-prefix']),
+  op: z.enum(['merge-json', 'merge-toml', 'copy', 'ensure-prefix', 'managed-block']),
   /** asset path relative to assets/ */
   asset: z.string().min(1),
   /** destination path; `~` expands to the home dir */
@@ -178,6 +205,7 @@ const PresetSchema = z.object({
   /** Restrict this preset to specific agents (omit = all agents). */
   agents: z.array(z.string()).optional(),
   files: z.array(PresetFileSchema).min(1),
+  ...DefaultFlag,
   ...OriginFields,
 });
 
@@ -213,6 +241,7 @@ const IntegrationSchema = z.object({
   once: z.array(IntegrationStepSchema).default([]),
   /** Config files merged before the commands run (same ops as presets). */
   files: z.array(PresetFileSchema).default([]),
+  ...DefaultFlag,
   ...OriginFields,
 });
 
@@ -322,6 +351,11 @@ export function stampCatalogOrigin<T extends CatalogBase>(base: T, origin: Catal
 export async function loadCatalog(): Promise<CatalogData> {
   const catalog = await parseCatalogFile(catalogPath(), CatalogSchema);
   return stampCatalogOrigin(catalog, {});
+}
+
+/** Entries flagged `default: true`. Example: defaultEntries(catalog.skills).map((s) => s.id). */
+export function defaultEntries<T extends { default: boolean }>(entries: T[]): T[] {
+  return entries.filter((entry) => entry.default);
 }
 
 /** A placeholder value still looks like `<something>` — used to warn the user. */

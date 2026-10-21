@@ -245,7 +245,9 @@ build_harness_command() {
     HARNESS_CMD=(npx -y github:reiquileut/agent-harness)
   fi
   HARNESS_CMD+=(init)
-  [ "$ASSUME_YES" = 1 ] && HARNESS_CMD+=(-y --all -a claude-code -a codex -a opencode)
+  # --defaults (v1.7.0): the owner setup flagged in the catalogs, not --all — with an overlay,
+  # --all would also pull the entries it keeps off by default (e.g. an MCP that can spend money).
+  [ "$ASSUME_YES" = 1 ] && HARNESS_CMD+=(-y --defaults -a claude-code -a codex -a opencode)
   [ -n "$OVERLAY_SPEC" ] && HARNESS_CMD+=(--overlay "$OVERLAY_SPEC")
   [ "${#EXTRA_INIT_ARGS[@]}" -gt 0 ] && HARNESS_CMD+=("${EXTRA_INIT_ARGS[@]}")
   return 0

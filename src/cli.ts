@@ -28,9 +28,10 @@ program
   .option('--preset <id>', 'settings/config preset to apply (repeatable)', collect, [])
   .option('--integration <id>', 'integration to run, e.g. ai-memory (repeatable)', collect, [])
   .option('--overlay <dir|git-url>', 'private overlay catalog to add (repeatable; also AGENT_HARNESS_OVERLAY, ";"-separated)', collect, [])
+  .option('--defaults', "install the catalog entries flagged default (the owner's setup); item flags add to them", false)
   .option('--all', 'select every catalog item', false)
   .option('--no-manifest', "do not record what was installed in the agent's global instructions file")
-  .option('-y, --yes', 'assume defaults, no prompts (CI)', false)
+  .option('-y, --yes', 'no prompts (CI); installs only what the flags name — add --defaults for the owner setup', false)
   .option('--dry-run', 'show actions without writing anything', false)
   .option('--force', 'overwrite existing entries instead of skipping', false)
   .action(async (opts) => {
@@ -45,6 +46,7 @@ program
       integration: opts.integration,
       overlay: opts.overlay,
       all: !!opts.all,
+      defaults: !!opts.defaults,
       manifest: opts.manifest !== false,
       yes: !!opts.yes,
       version: pkg.version,

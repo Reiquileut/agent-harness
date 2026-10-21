@@ -7,7 +7,7 @@ import process13 from "process";
 // package.json
 var package_default = {
   name: "@r2t/agent-harness",
-  version: "1.6.0",
+  version: "1.7.0",
   description: "Dotfiles-for-AI-agents bootstrapper: one command to configure MCPs, skills, plugins, custom agents, settings presets and integrations across Claude Code, Codex, and OpenCode \u2014 with private overlays and a one-command Ubuntu bootstrap.",
   type: "module",
   bin: {
@@ -27,7 +27,7 @@ var package_default = {
     test: "bash scripts/ci-e2e.sh",
     prepack: "tsup",
     start: "node dist/cli.js",
-    "test:hooks": "node --test assets/hooks/claude/bloquear-mencao-claude-commit.test.ts",
+    "test:hooks": "node --test assets/hooks/claude/bloquear-mencao-claude-commit.test.ts assets/hooks/claude/higiene-docker-disco.test.ts assets/hooks/codex/ai-memory-startup.test.ts assets/presets/claude/statusline.test.ts assets/presets/claude/statusline-io.test.ts",
     guard: "node scripts/guard-no-private.mjs"
   },
   keywords: [
@@ -113,12 +113,13 @@ async function readText(p) {
     throw err;
   }
 }
-async function atomicWrite(p, content) {
+async function atomicWrite(p, content, executable = false) {
   const target = expandHome(p);
   if (ctx.dryRun) return;
   await fs.mkdir(path.dirname(target), { recursive: true });
   const tmp = `${target}.${process.pid}.${Date.now()}.tmp`;
   await fs.writeFile(tmp, content, "utf8");
+  if (executable && process.platform !== "win32") await fs.chmod(tmp, 493);
   await fs.rename(tmp, target);
 }
 async function readBytes(p) {
@@ -225,7 +226,7 @@ async function runAction(action) {
         log.plain(`${INDENT}${dryTag()}${verb} ${tildify(action.path)} ${pc2.dim(`\u2014 ${action.label}`)}`);
         return { status: "written", label: action.label, detail: `${verb} ${action.path}` };
       }
-      await atomicWrite(action.path, action.after);
+      await atomicWrite(action.path, action.after, action.executable);
       log.success(`${INDENT}${verb === "create" ? "created" : "updated"} ${tildify(action.path)} ${pc2.dim(`\u2014 ${action.label}`)}`);
       return { status: "written", label: action.label };
     }
@@ -412,6 +413,7 @@ var OriginFields = {
   assetsRoot: z2.string().optional(),
   overlay: z2.string().optional()
 };
+var DefaultFlag = { default: z2.boolean().default(false) };
 var McpAgentOverrideSchema = z2.object({
   command: z2.string().min(1).optional(),
   args: z2.array(z2.string()).optional(),
@@ -430,6 +432,7 @@ var McpHttpSchema = z2.object({
   /** Restrict this MCP to specific OSes (omit = all). */
   platforms: PlatformsSchema,
   overrides: z2.record(z2.string(), McpAgentOverrideSchema).default({}),
+  ...DefaultFlag,
   ...OriginFields
 });
 var McpStdioSchema = z2.object({
@@ -444,6 +447,7 @@ var McpStdioSchema = z2.object({
   /** Restrict this MCP to specific OSes (omit = all), e.g. Pencil's Windows .exe. */
   platforms: PlatformsSchema,
   overrides: z2.record(z2.string(), McpAgentOverrideSchema).default({}),
+  ...DefaultFlag,
   ...OriginFields
 });
 var McpSchema = z2.discriminatedUnion("transport", [McpHttpSchema, McpStdioSchema]);
@@ -466,6 +470,7 @@ var SkillSchema = z2.object({
   installer: SkillInstallerSchema.optional(),
   /** Restrict this skill to specific OSes (omit = all). */
   platforms: PlatformsSchema,
+  ...DefaultFlag,
   ...OriginFields
 });
 var SubagentSchema = z2.object({
@@ -475,6 +480,7 @@ var SubagentSchema = z2.object({
   file: z2.string().min(1),
   /** Codex variant: filename inside assets/agents/ (TOML), copied verbatim. Omit = not offered to Codex. */
   codex_file: z2.string().optional(),
+  ...DefaultFlag,
   ...OriginFields
 });
 var PluginSchemaRaw = z2.object({
@@ -499,6 +505,15 @@ var PluginSchemaRaw = z2.object({
    * `openai-bundled`, …): skip the marketplace step and only enable the plugins.
    */
   builtin: z2.boolean().default(false),
+  /**
+   * The marketplace ships inside this repo (`marketplace` = an assets-relative
+   * dir with .claude-plugin/marketplace.json — the owner's Claude Code mods). It
+   * is staged into `installPath` and registered by that local path; a file the
+   * user edited there is kept unless --force (mods are developed in place).
+   */
+  bundled: z2.boolean().default(false),
+  installPath: z2.string().optional(),
+  ...DefaultFlag,
   ...OriginFields
 });
 var PluginSchema = PluginSchemaRaw.transform((p) => ({
@@ -508,9 +523,11 @@ var PluginSchema = PluginSchemaRaw.transform((p) => ({
   message: "plugin needs a `marketplace` unless `builtin` is true"
 }).refine((p) => p.builtin ? Boolean(p.name) : true, {
   message: "builtin plugins need an explicit marketplace `name`"
+}).refine((p) => !p.bundled || Boolean(p.installPath) && Boolean(p.name) && !p.builtin, {
+  message: "bundled plugins need `installPath` and `name`, and cannot be `builtin`"
 });
 var PresetFileSchema = z2.object({
-  op: z2.enum(["merge-json", "merge-toml", "copy", "ensure-prefix"]),
+  op: z2.enum(["merge-json", "merge-toml", "copy", "ensure-prefix", "managed-block"]),
   /** asset path relative to assets/ */
   asset: z2.string().min(1),
   /** destination path; `~` expands to the home dir */
@@ -528,6 +545,7 @@ var PresetSchema = z2.object({
   /** Restrict this preset to specific agents (omit = all agents). */
   agents: z2.array(z2.string()).optional(),
   files: z2.array(PresetFileSchema).min(1),
+  ...DefaultFlag,
   ...OriginFields
 });
 var IntegrationStepSchema = z2.object({
@@ -553,6 +571,7 @@ var IntegrationSchema = z2.object({
   once: z2.array(IntegrationStepSchema).default([]),
   /** Config files merged before the commands run (same ops as presets). */
   files: z2.array(PresetFileSchema).default([]),
+  ...DefaultFlag,
   ...OriginFields
 });
 var TemplatesSchema = z2.object({
@@ -640,6 +659,7 @@ function presetAppliesTo(preset, agentIds) {
 }
 
 // src/core/plugins.ts
+import { promises as fs2 } from "fs";
 import path4 from "path";
 function marketplaceName(plugin) {
   if (plugin.name) return plugin.name;
@@ -651,29 +671,73 @@ function marketplaceGitUrl(plugin) {
   if (/^(https?:|git@|ssh:)/.test(m)) return m;
   return `https://github.com/${m.replace(/\.git$/, "")}.git`;
 }
+function bundledInstallPath(plugin) {
+  return expandHome(plugin.installPath ?? "");
+}
+async function installedCopyDiffers(src, dest) {
+  const installed = await readBytes(dest);
+  if (installed == null) return false;
+  const bundled = await readBytes(src);
+  return bundled == null || !bundled.equals(installed);
+}
+async function bundledStagingAction(src, dest) {
+  const label = `Bundled plugin file ${path4.basename(src)}`;
+  if (!isForce() && await installedCopyDiffers(src, dest)) {
+    return { kind: "skip", label, reason: `${tildify(dest)} edited locally (use --force to replace)` };
+  }
+  return { kind: "copy", label, src, dest };
+}
+async function bundledStagingTree(sourceDir, destDir) {
+  const entries = await fs2.readdir(sourceDir, { withFileTypes: true });
+  const actions = [];
+  for (const entry of entries) {
+    const src = path4.join(sourceDir, entry.name);
+    const dest = path4.join(destDir, entry.name);
+    if (entry.isDirectory()) actions.push(...await bundledStagingTree(src, dest));
+    else if (entry.isFile()) actions.push(await bundledStagingAction(src, dest));
+  }
+  return actions;
+}
+async function buildBundledStagingActions(plugin) {
+  if (!plugin.bundled) return [];
+  const sourceDir = assetPath(plugin.marketplace, plugin.assetsRoot);
+  try {
+    return await bundledStagingTree(sourceDir, bundledInstallPath(plugin));
+  } catch (err) {
+    const message = `Bundled marketplace missing at ${sourceDir} (expected a dir with .claude-plugin/marketplace.json): ${err.message}`;
+    return [{ kind: "note", level: "warn", label: `Plugin ${plugin.id}`, message }];
+  }
+}
 function claudeAvailable() {
   return commandOnPath("claude");
 }
-async function buildPluginActions(agent, plugin) {
+async function buildPluginActions(agent, plugin, seenMarketplaces = /* @__PURE__ */ new Set()) {
   if (!agent.supports.plugins || !agent.pluginMethod) {
     return [{ kind: "skip", label: `Plugins \u2192 ${agent.label}`, reason: "agent has no plugin system" }];
   }
+  const firstUse = !seenMarketplaces.has(marketplaceName(plugin));
+  seenMarketplaces.add(marketplaceName(plugin));
+  const staging = firstUse ? await buildBundledStagingActions(plugin) : [];
   switch (agent.pluginMethod) {
     case "claude-cli":
-      return buildClaudePluginActions(plugin);
+      return [...staging, ...await buildClaudePluginActions(plugin, firstUse, plugin.bundled)];
     case "codex-toml":
-      return [await buildCodexPluginAction(agent, plugin)];
+      return [...staging, await buildCodexPluginAction(agent, plugin)];
   }
 }
-function buildClaudePluginActions(plugin) {
-  if (!claudeAvailable()) return [];
+function claudeMarketplaceSource(plugin) {
+  return plugin.bundled ? bundledInstallPath(plugin) : plugin.marketplace;
+}
+async function buildClaudePluginActions(plugin, addMarketplace, bundled) {
+  if (!claudeAvailable()) return bundled ? [await buildPluginSettingsFallbackAction(plugin)] : [];
   const actions = [];
-  if (!plugin.builtin) {
+  if (!plugin.builtin && addMarketplace) {
+    const source = claudeMarketplaceSource(plugin);
     actions.push({
       kind: "exec",
-      label: `Marketplace ${plugin.marketplace}`,
+      label: `Marketplace ${plugin.bundled ? tildify(source) : source}`,
       cmd: "claude",
-      args: ["plugin", "marketplace", "add", plugin.marketplace],
+      args: ["plugin", "marketplace", "add", source],
       timeout: 12e4,
       tolerant: true
     });
@@ -691,6 +755,10 @@ function buildClaudePluginActions(plugin) {
     });
   }
   return actions;
+}
+function settingsMarketplaceSource(plugin) {
+  if (plugin.bundled) return { source: "directory", path: bundledInstallPath(plugin) };
+  return { source: "github", repo: plugin.marketplace.replace(/\.git$/, "") };
 }
 async function buildPluginSettingsFallbackAction(plugin) {
   const file = expandHome("~/.claude/settings.json");
@@ -712,9 +780,8 @@ async function buildPluginSettingsFallbackAction(plugin) {
   }
   const mpName = marketplaceName(plugin);
   if (!plugin.builtin) {
-    const repo = plugin.marketplace.replace(/\.git$/, "");
     const ekm = isRecord(root.extraKnownMarketplaces) ? { ...root.extraKnownMarketplaces } : {};
-    ekm[mpName] = { source: { source: "github", repo } };
+    ekm[mpName] = { source: settingsMarketplaceSource(plugin) };
     root.extraKnownMarketplaces = ekm;
   }
   const enabled = isRecord(root.enabledPlugins) ? { ...root.enabledPlugins } : {};
@@ -759,7 +826,7 @@ async function buildCodexPluginAction(agent, plugin) {
   }
   const patch = {};
   if (wantMarketplace) {
-    patch.marketplaces = { [mpName]: { source_type: "git", source: marketplaceGitUrl(plugin) } };
+    patch.marketplaces = { [mpName]: plugin.bundled ? { source_type: "local", source: bundledInstallPath(plugin) } : { source_type: "git", source: marketplaceGitUrl(plugin) } };
   }
   if (wantPlugins.length) {
     patch.plugins = Object.fromEntries(wantPlugins.map((ref) => [ref, { enabled: true }]));
@@ -1110,6 +1177,25 @@ async function buildEnsurePrefix(file, label) {
 
 ${before}` };
 }
+function managedBlockMarkers(presetId) {
+  return [`<!-- BEGIN agent-harness:${presetId} -->`, `<!-- END agent-harness:${presetId} -->`];
+}
+function holdsUnmanagedCopy(existing, asset, begin) {
+  if (existing.includes(begin)) return false;
+  const signature = asset.split(/\r?\n/).find((line) => line.trim())?.trim();
+  return Boolean(signature) && existing.split(/\r?\n/).some((line) => line.trim() === signature);
+}
+async function buildManagedBlock(presetId, file, label) {
+  const asset = await readAsset(file);
+  if (asset == null) return { kind: "note", level: "warn", label, message: `Preset asset missing: ${file.asset}` };
+  const dest = expandHome(file.dest);
+  const before = await readText(dest);
+  const [begin, end] = managedBlockMarkers(presetId);
+  if (before != null && holdsUnmanagedCopy(before, asset, begin)) {
+    return { kind: "skip", label, reason: `${tildify(dest)} holds an unmanaged copy (delete it to let agent-harness manage it)` };
+  }
+  return { kind: "file", label, path: dest, before, after: mergeManagedBlock(before, asset, begin, end) };
+}
 async function buildPresetFileAction(preset, file) {
   const label = `Preset ${preset.label ?? preset.id} \u2192 ${tildify(expandHome(file.dest))}`;
   if (!platformAllows(file.platforms)) {
@@ -1124,6 +1210,8 @@ async function buildPresetFileAction(preset, file) {
       return buildMergeToml(file, label);
     case "ensure-prefix":
       return buildEnsurePrefix(file, label);
+    case "managed-block":
+      return buildManagedBlock(preset.id, file, label);
   }
 }
 function presetFilesFor(files, agentIds) {
@@ -1189,7 +1277,7 @@ async function runIntegration(entry, agents, deps = defaultIntegrationDeps) {
 }
 
 // src/core/overlay.ts
-import { existsSync as existsSync3, promises as fs2, rmSync, statSync } from "fs";
+import { existsSync as existsSync3, promises as fs3, rmSync, statSync } from "fs";
 import os2 from "os";
 import path6 from "path";
 import process7 from "process";
@@ -1218,8 +1306,8 @@ function defaultOverlayGitRunner(args) {
 }
 async function cloneOverlayRepo(spec, runGit) {
   const label = redactOverlaySecrets(spec);
-  const dir = await fs2.mkdtemp(path6.join(os2.tmpdir(), OVERLAY_TEMP_PREFIX));
-  const dispose = () => fs2.rm(dir, { recursive: true, force: true });
+  const dir = await fs3.mkdtemp(path6.join(os2.tmpdir(), OVERLAY_TEMP_PREFIX));
+  const dispose = () => fs3.rm(dir, { recursive: true, force: true });
   try {
     await runGit(["clone", "--depth", "1", "--quiet", "--", toOverlayGitUrl(spec), dir]);
   } catch (err) {
@@ -1332,7 +1420,7 @@ async function loadCatalogWithOverlays(flags) {
 }
 
 // src/core/skills.ts
-import { promises as fs3 } from "fs";
+import { promises as fs4 } from "fs";
 import path7 from "path";
 function isLocalSkill(skill) {
   return skill.source === "local";
@@ -1382,7 +1470,7 @@ function hasLocalSkill(skill) {
 }
 async function listFilesRecursive(dir) {
   const out = [];
-  const entries = await fs3.readdir(dir, { withFileTypes: true });
+  const entries = await fs4.readdir(dir, { withFileTypes: true });
   for (const e of entries) {
     const full = path7.join(dir, e.name);
     if (e.isDirectory()) out.push(...await listFilesRecursive(full));
@@ -1412,8 +1500,9 @@ var BINARY_EXTENSIONS = /* @__PURE__ */ new Set([
   ".webm",
   ".wasm"
 ]);
-function isBinaryFile(file) {
-  return BINARY_EXTENSIONS.has(path7.extname(file).toLowerCase());
+function isBinaryFile(file, bytes) {
+  if (BINARY_EXTENSIONS.has(path7.extname(file).toLowerCase())) return true;
+  return bytes.subarray(0, 8e3).includes(0);
 }
 async function buildLocalSkillCopyActions(agent, skill, scope) {
   const label = `Skill ${skill.skill} \u2192 ${agent.label} (local copy)`;
@@ -1435,17 +1524,19 @@ async function buildLocalSkillCopyActions(agent, skill, scope) {
   for (const file of files) {
     const rel = path7.relative(srcDir, file);
     const dest = path7.join(destDir, rel);
-    if (isBinaryFile(file)) {
+    const bytes = await fs4.readFile(file);
+    if (isBinaryFile(file, bytes)) {
       actions.push({ kind: "copy", label: `copy ${rel} \u2192 ${agent.label}`, src: file, dest });
       continue;
     }
-    const after = await fs3.readFile(file, "utf8");
+    const after = bytes.toString("utf8");
     actions.push({
       kind: "file",
       label: `copy ${rel} \u2192 ${agent.label}`,
       path: dest,
       before: await readText(dest),
-      after
+      after,
+      executable: after.startsWith("#!")
     });
   }
   return actions;
@@ -1519,7 +1610,7 @@ async function buildManifestAction(agent, sel, version) {
 }
 
 // src/core/subagents.ts
-import { promises as fs4 } from "fs";
+import { promises as fs5 } from "fs";
 import path8 from "path";
 function subagentFileFor(entry, agent) {
   if (!agent.subagents) return void 0;
@@ -1552,7 +1643,7 @@ async function buildSubagentCopyAction(agent, entry, scope) {
   }
   const destBase = expandHome(scope === "user" ? agent.subagents.userDir : agent.subagents.projectDir);
   const dest = path8.join(destBase, file);
-  const after = await fs4.readFile(srcFile, "utf8");
+  const after = await fs5.readFile(srcFile, "utf8");
   return { kind: "file", label, path: dest, before: await readText(dest), after };
 }
 
@@ -1681,6 +1772,17 @@ function pluginHint(p) {
 function presetHint(p) {
   return p.agents ? p.agents.join("/") : "all agents";
 }
+function defaultMenuValues(catalog) {
+  const flagged = (prefix, entries) => entries.filter((entry) => entry.default).map((entry) => `${prefix}${entry.id}`);
+  return [
+    ...flagged("mcp:", catalog.mcps),
+    ...flagged("plugin:", catalog.plugins),
+    ...flagged("mskill:", catalog.skills),
+    ...flagged("magent:", catalog.subagents),
+    ...flagged("preset:", catalog.presets),
+    ...flagged("integ:", catalog.integrations)
+  ];
+}
 function buildUnifiedGroups(catalog) {
   const groups = {};
   const machine = [];
@@ -1769,8 +1871,9 @@ async function promptInitSelection(catalog) {
   let chosen = [];
   if (Object.keys(groups).length) {
     const picked = await groupMultiselect({
-      message: "Marque o que instalar (espa\xE7o alterna, enter confirma):",
+      message: "Marque o que instalar (j\xE1 vem marcado o seu setup padr\xE3o; espa\xE7o alterna, enter confirma):",
       options: groups,
+      initialValues: defaultMenuValues(catalog),
       required: false,
       selectableGroups: false
     });
@@ -2024,7 +2127,7 @@ async function runScaffoldWithCatalog(catalog, opts) {
 function selectionFromFlags(catalog, opts) {
   const agentIds = opts.agent.length ? opts.agent : opts.all ? catalog.agents : detectInstalledAgentIds();
   const agents = uniqueAgents(agentIds);
-  const pick = (all, ids) => opts.all ? all : all.filter((x) => ids.includes(x.id));
+  const pick = (all, ids) => opts.all ? all : all.filter((x) => ids.includes(x.id) || opts.defaults && x.default);
   return {
     agents,
     mcps: pick(catalog.mcps, opts.mcp),
@@ -2049,7 +2152,7 @@ function uniqueAgents(ids) {
 }
 function isInteractive2(opts) {
   if (opts.yes) return false;
-  const explicit = opts.all || opts.agent.length > 0 || opts.mcp.length > 0 || opts.skill.length > 0 || opts.plugin.length > 0 || opts.subagent.length > 0 || opts.preset.length > 0 || opts.integration.length > 0;
+  const explicit = opts.all || opts.defaults || opts.agent.length > 0 || opts.mcp.length > 0 || opts.skill.length > 0 || opts.plugin.length > 0 || opts.subagent.length > 0 || opts.preset.length > 0 || opts.integration.length > 0;
   if (explicit) return false;
   return Boolean(process12.stdout.isTTY && process12.stdin.isTTY);
 }
@@ -2127,8 +2230,9 @@ async function configureAgent(agent, sel, opts) {
   }
   const pluginsHere = sel.plugins.filter((p) => pluginAppliesTo(p, agent.id));
   if (agent.supports.plugins) {
+    const seenMarketplaces = /* @__PURE__ */ new Set();
     for (const p of pluginsHere) {
-      const actions = await buildPluginActions(agent, p);
+      const actions = await buildPluginActions(agent, p, seenMarketplaces);
       if (actions.length === 0) {
         await runAction(await buildPluginSettingsFallbackAction(p));
       } else {
@@ -2231,7 +2335,7 @@ function collect(value, previous) {
 }
 var program = new Command();
 program.name("agent-harness").description("Dotfiles-for-AI-agents bootstrapper \u2014 configure MCPs, skills, plugins, custom agents and settings presets across Claude Code, Codex, and OpenCode.").version(package_default.version);
-program.command("init", { isDefault: true }).description("Configure agents on this machine (user-scope MCPs, skills, plugins, custom agents, presets), then print the login block.").option("-a, --agent <id>", "target agent (repeatable)", collect, []).option("--mcp <id>", "MCP to install (repeatable)", collect, []).option("--skill <id>", "skill to install (repeatable)", collect, []).option("--plugin <id>", "plugin to install (repeatable)", collect, []).option("--subagent <id>", "custom agent to install (repeatable)", collect, []).option("--preset <id>", "settings/config preset to apply (repeatable)", collect, []).option("--integration <id>", "integration to run, e.g. ai-memory (repeatable)", collect, []).option("--overlay <dir|git-url>", 'private overlay catalog to add (repeatable; also AGENT_HARNESS_OVERLAY, ";"-separated)', collect, []).option("--all", "select every catalog item", false).option("--no-manifest", "do not record what was installed in the agent's global instructions file").option("-y, --yes", "assume defaults, no prompts (CI)", false).option("--dry-run", "show actions without writing anything", false).option("--force", "overwrite existing entries instead of skipping", false).action(async (opts) => {
+program.command("init", { isDefault: true }).description("Configure agents on this machine (user-scope MCPs, skills, plugins, custom agents, presets), then print the login block.").option("-a, --agent <id>", "target agent (repeatable)", collect, []).option("--mcp <id>", "MCP to install (repeatable)", collect, []).option("--skill <id>", "skill to install (repeatable)", collect, []).option("--plugin <id>", "plugin to install (repeatable)", collect, []).option("--subagent <id>", "custom agent to install (repeatable)", collect, []).option("--preset <id>", "settings/config preset to apply (repeatable)", collect, []).option("--integration <id>", "integration to run, e.g. ai-memory (repeatable)", collect, []).option("--overlay <dir|git-url>", 'private overlay catalog to add (repeatable; also AGENT_HARNESS_OVERLAY, ";"-separated)', collect, []).option("--defaults", "install the catalog entries flagged default (the owner's setup); item flags add to them", false).option("--all", "select every catalog item", false).option("--no-manifest", "do not record what was installed in the agent's global instructions file").option("-y, --yes", "no prompts (CI); installs only what the flags name \u2014 add --defaults for the owner setup", false).option("--dry-run", "show actions without writing anything", false).option("--force", "overwrite existing entries instead of skipping", false).action(async (opts) => {
   setRunContext({ dryRun: !!opts.dryRun, force: !!opts.force, yes: !!opts.yes });
   await runInitCommand({
     agent: opts.agent,
@@ -2243,6 +2347,7 @@ program.command("init", { isDefault: true }).description("Configure agents on th
     integration: opts.integration,
     overlay: opts.overlay,
     all: !!opts.all,
+    defaults: !!opts.defaults,
     manifest: opts.manifest !== false,
     yes: !!opts.yes,
     version: package_default.version

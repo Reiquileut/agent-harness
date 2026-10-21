@@ -18,7 +18,8 @@ function recordFakeAiMemoryCall(extra) {
 
 function mergeFakeInstructionsBlock(target) {
   const before = existsSync(target) ? readFileSync(target, 'utf8') : '';
-  const hadTemplate = before.split('\n')[0].includes('Clean Code for Agents');
+  // v1.7: the rules sit inside a marked block, so the template is no longer line 1.
+  const hadTemplate = before.split('\n').some((line) => line.startsWith('# Clean Code for Agents'));
   const block = `${START}\nfake ai-memory routing block\n${END}\n`;
   const start = before.indexOf(START);
   const end = before.indexOf(END);

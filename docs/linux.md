@@ -13,8 +13,9 @@ O `bootstrap/ubuntu.sh` instala: git, curl, jq, python3, make (apt), Node 22
 Claude Code (instalador nativo), Codex (`@openai/codex`), OpenCode (`opencode-ai`),
 task-master-ai e ai-memory (tarball de release do GitHub + sha256 em
 `~/.local/bin`). No fim roda `agent-harness init`; com `--yes` isso significa
-`init -y --all` nos três agentes (a integração ai-memory é pulada com aviso se
-faltar `AI_MEMORY_SERVER_URL`).
+`init -y --defaults` nos três agentes, ou seja, o setup marcado como padrão nos
+catálogos (a integração ai-memory é pulada com aviso se faltar
+`AI_MEMORY_SERVER_URL`, e a do TWG se faltar o CLI `twg`).
 
 ## O comando
 
@@ -96,7 +97,12 @@ ai-memory doctor
 
 A integração roda `install-mcp` e `install-hooks` por agente, e uma vez
 `install-instructions --target ~/.codex/AGENTS.md`. Também mescla
-`autoMemoryEnabled:false` e `autoDreamEnabled:false` nas configurações do Claude.
+`autoMemoryEnabled:false` e `autoDreamEnabled:false` nas configurações do Claude e,
+no Codex, instala o hook SessionStart da leitura inicial do ai-memory
+(`~/.codex/hooks/ai-memory-startup.ts` + entrada em `~/.codex/hooks.json`).
+
+As skills TWG (Atlassian) dependem do seu CLI `twg`: instale-o, rode `twg setup`
+uma vez e depois `init -y --integration twg-skills -a claude-code -a codex`.
 
 ## Checklist de verificação
 
@@ -105,6 +111,11 @@ A integração roda `install-mcp` e `install-hooks` por agente, e uma vez
 - [ ] `~/.codex/config.toml` existe **sem** as tabelas `[windows]`.
 - [ ] `~/.claude/hooks/bloquear-mencao-claude-commit.ts` existe (preset
       `no-ai-attribution`) e o `~/.claude/settings.json` o referencia.
+- [ ] `~/.claude/hooks/higiene-docker-disco.ts` existe (preset `docker-disk-hygiene`).
+- [ ] `~/.claude/statusline.ts` existe e `node ~/.claude/statusline.ts < /dev/null` não quebra.
+- [ ] `~/.claude/mods/.claude-plugin/marketplace.json` existe e `claude plugin list`
+      mostra os mods `@agent-harness-mods`.
+- [ ] `~/.codex/hooks.json` tem a entrada SessionStart do `ai-memory-startup.ts`.
 - [ ] `~/.claude/skills/` e `~/.agents/skills/` têm as skills escolhidas.
 - [ ] O bloco `agent-harness` aparece no fim do `AGENTS.md` global (manifesto).
 - [ ] `claude --version`, `codex --version`, `opencode --version` respondem.
@@ -119,8 +130,8 @@ npx -y github:reiquileut/agent-harness init --dry-run --all   # mostra cada aç�
 
 ## Problemas comuns
 
-- **Node < 22.18:** o hook de atribuição roda TypeScript nativo e precisa de
-  >= 22.18. Rode o bootstrap de novo (ele instala Node 22 via NodeSource) e
+- **Node < 22.18:** os hooks, os mods e a status line rodam TypeScript nativo e
+  precisam de >= 22.18. Rode o bootstrap de novo (ele instala Node 22 via NodeSource) e
   confira com `node -v`.
 - **`~/.local/bin` fora do PATH:** o ai-memory e o Claude Code ficam lá. Adicione
   `export PATH="$HOME/.local/bin:$PATH"` ao `~/.bashrc` e abra um novo shell.

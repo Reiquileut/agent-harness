@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"{{HOME}}/.codex/hooks/ai-memory-startup.ts\"",
+            "timeout": 10,
+            "statusMessage": "Leitura inicial do ai-memory"
+          }
+        ]
+      }
+    ]
+  }
+}

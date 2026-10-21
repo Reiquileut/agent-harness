@@ -114,8 +114,14 @@ const BINARY_EXTENSIONS = new Set([
   '.mp3', '.mp4', '.webm', '.wasm',
 ]);
 
-function isBinaryFile(file: string): boolean {
-  return BINARY_EXTENSIONS.has(path.extname(file).toLowerCase());
+/**
+ * Binary by extension, or by content: a NUL byte in the first 8000 bytes (git's
+ * heuristic) catches engines and `.exe` files the list misses — the text path
+ * would corrupt them (found 2026-10-20 in a bundled skill's platform engine).
+ */
+function isBinaryFile(file: string, bytes: Buffer): boolean {
+  if (BINARY_EXTENSIONS.has(path.extname(file).toLowerCase())) return true;
+  return bytes.subarray(0, 8000).includes(0);
 }
 
 /**
@@ -148,17 +154,19 @@ export async function buildLocalSkillCopyActions(
   for (const file of files) {
     const rel = path.relative(srcDir, file);
     const dest = path.join(destDir, rel);
-    if (isBinaryFile(file)) {
+    const bytes = await fs.readFile(file);
+    if (isBinaryFile(file, bytes)) {
       actions.push({ kind: 'copy', label: `copy ${rel} → ${agent.label}`, src: file, dest });
       continue;
     }
-    const after = await fs.readFile(file, 'utf8');
+    const after = bytes.toString('utf8');
     actions.push({
       kind: 'file',
       label: `copy ${rel} → ${agent.label}`,
       path: dest,
       before: await readText(dest),
       after,
+      executable: after.startsWith('#!'),
     });
   }
   return actions;

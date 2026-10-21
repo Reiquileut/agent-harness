@@ -83,6 +83,21 @@ function presetHint(p: PresetEntry): string {
   return p.agents ? p.agents.join('/') : 'all agents';
 }
 
+/**
+ * Menu values of every `default: true` machine entry — what the menu opens
+ * with checked (v1.7.0), so a new machine reproduces the owner's setup with Enter.
+ * Example: defaultMenuValues(catalog) → ['mcp:chrome-devtools', 'preset:claude-settings', …].
+ */
+export function defaultMenuValues(catalog: CatalogData): string[] {
+  const flagged = (prefix: string, entries: Array<{ id: string; default: boolean }>): string[] =>
+    entries.filter((entry) => entry.default).map((entry) => `${prefix}${entry.id}`);
+  return [
+    ...flagged('mcp:', catalog.mcps), ...flagged('plugin:', catalog.plugins),
+    ...flagged('mskill:', catalog.skills), ...flagged('magent:', catalog.subagents),
+    ...flagged('preset:', catalog.presets), ...flagged('integ:', catalog.integrations),
+  ];
+}
+
 /** Two-group option set: "Nesta máquina" (global) and "Neste repositório". */
 function buildUnifiedGroups(catalog: CatalogData): Record<string, GroupOption[]> {
   const groups: Record<string, GroupOption[]> = {};
@@ -201,8 +216,9 @@ export async function promptInitSelection(catalog: CatalogData): Promise<Selecti
   let chosen: string[] = [];
   if (Object.keys(groups).length) {
     const picked = await groupMultiselect({
-      message: 'Marque o que instalar (espaço alterna, enter confirma):',
+      message: 'Marque o que instalar (já vem marcado o seu setup padrão; espaço alterna, enter confirma):',
       options: groups,
+      initialValues: defaultMenuValues(catalog),
       required: false,
       selectableGroups: false,
     });

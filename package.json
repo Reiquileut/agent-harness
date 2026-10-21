@@ -1,6 +1,6 @@
 {
   "name": "@r2t/agent-harness",
-  "version": "1.6.0",
+  "version": "1.7.0",
   "description": "Dotfiles-for-AI-agents bootstrapper: one command to configure MCPs, skills, plugins, custom agents, settings presets and integrations across Claude Code, Codex, and OpenCode — with private overlays and a one-command Ubuntu bootstrap.",
   "type": "module",
   "bin": {
@@ -20,7 +20,7 @@
     "test": "bash scripts/ci-e2e.sh",
     "prepack": "tsup",
     "start": "node dist/cli.js",
-    "test:hooks": "node --test assets/hooks/claude/bloquear-mencao-claude-commit.test.ts",
+    "test:hooks": "node --test assets/hooks/claude/bloquear-mencao-claude-commit.test.ts assets/hooks/claude/higiene-docker-disco.test.ts assets/hooks/codex/ai-memory-startup.test.ts assets/presets/claude/statusline.test.ts assets/presets/claude/statusline-io.test.ts",
     "guard": "node scripts/guard-no-private.mjs"
   },
   "keywords": [

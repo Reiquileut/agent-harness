@@ -16,15 +16,14 @@
       "mcp__chrome-devtools__click",
       "mcp__plugin_github_github__get_file_contents",
       "mcp__plugin_github_github__search_code",
-      "mcp__pencil"
+      "mcp__pencil",
+      "mcp__n8n-mcp__n8n_health_check",
+      "mcp__n8n-mcp__n8n_list_workflows"
     ],
     "defaultMode": "auto"
   },
   "effortLevel": "xhigh",
   "modelSettings": {
-    "claude-opus-5-5": {
-      "effortLevel": "xhigh"
-    },
     "claude-opus-5": {
       "effortLevel": "high"
     },
@@ -33,6 +32,15 @@
     },
     "claude-sonnet-5": {
       "effortLevel": "high"
+    },
+    "claude-opus-5-5": {
+      "effortLevel": "medium"
+    },
+    "claude-sonnet-5-5": {
+      "effortLevel": "medium"
+    },
+    "claude-haiku-5-5": {
+      "effortLevel": "low"
     }
   },
   "alwaysThinkingEnabled": true,
@@ -44,7 +52,7 @@
   "skipWorkflowUsageWarning": true,
   "statusLine": {
     "type": "command",
-    "command": "bash ~/.claude/statusline-command.sh"
+    "command": "node ~/.claude/statusline.ts"
   },
   "tui": "fullscreen",
   "theme": "light",
