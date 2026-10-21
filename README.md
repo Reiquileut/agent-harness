@@ -78,6 +78,8 @@ npx github:reiquileut/agent-harness --overlay git@github.com:you/private-overlay
 
 Neither bootstrap asks for a secret: it installs everything, then prints the logins and tokens
 to set afterwards, with one re-run (`init -y --defaults --overlay …`) that adds what waited for them.
+Drop `-s -- --yes` to get the interactive menu at the end instead (your setup already checked); the
+bootstrap hands it the terminal, so it works through `curl | bash` too.
 
 > **Needs:** Node ≥ 22 (≥ 22.18 for the hooks, mods and status line), `git`, and internet. The
 > repo is public (no login) and ships a committed `dist/`, so **nothing builds at install time**.
@@ -423,7 +425,8 @@ pnpm guard                        # privacy guard
 
 `scripts/ci-e2e.sh` runs every `scripts/e2e/[0-9]*.sh` suite (`10-init`, `15-claude-cli`, `20-scaffold`,
 `30-platform`, `40-overlay`, `50-integrations`, `60-guard`, `70-bootstrap`, `71-bootstrap-build`,
-`72-bootstrap-macos`, `80-defaults`, `82-mods`, `84-hooks`, `86-global-rules`, `88-twg`, `89-statusline`)
+`72-bootstrap-macos`, `73-bootstrap-menu`, `80-defaults`, `82-mods`, `84-hooks`, `86-global-rules`, `88-twg`,
+`89-statusline`)
 and writes **`artifacts/e2e/report.json`**; pass/fail is its `failed` count. Fakes for the agent CLIs
 (`claude`, `ai-memory`, `twg`) live in `test/fixtures/bin/`, and the Mac stand-ins (`uname`, `brew`,
 plus `curl`/`npm` that refuse to download) in `test/fixtures/bootstrap-macos/`, so no real agent,

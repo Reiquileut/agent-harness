@@ -16,6 +16,8 @@ PNPM_SPEC="pnpm@10"
 AI_MEMORY_BASE="https://github.com/akitaonrails/ai-memory/releases/latest/download"
 LOCAL_BIN="$HOME/.local/bin"
 SCRATCH_DIR=""
+# The terminal handed to the interactive menu; BOOTSTRAP_TTY overrides it (the e2e suite uses a file).
+BOOTSTRAP_TTY="${BOOTSTRAP_TTY:-/dev/tty}"
 
 log() { printf '[bootstrap] %s\n' "$*"; }
 die() { printf '[bootstrap] ERROR: %s\n' "$*" >&2; exit 1; }
@@ -215,11 +217,27 @@ build_harness_command() {
   return 0
 }
 
+# Opening the terminal for real, unlike `[ -r ]`: /dev/tty exists even where there is no controlling
+# terminal (CI, cron, ssh -T), and redirecting from it there would abort the run.
+terminal_available() {
+  ( : < "$BOOTSTRAP_TTY" ) 2>/dev/null
+}
+
+# The interactive menu needs the keyboard. Piped in by `curl … | bash`, the bootstrap's stdin is the
+# spent script, so the harness saw no terminal and quietly installed nothing (found 2026-10-21, v1.7.1):
+# without --yes it gets the terminal instead. --yes and --dry-run never need it.
+run_harness_command() {
+  if [ "$ASSUME_YES" = 1 ] || [ "$DRY_RUN" = 1 ] || [ -t 0 ]; then run "${HARNESS_CMD[@]}"; return; fi
+  if terminal_available; then run "${HARNESS_CMD[@]}" < "$BOOTSTRAP_TTY"; return; fi
+  log "no terminal for the interactive menu: init installs only what flags name; re-run with --yes for the owner defaults"
+  run "${HARNESS_CMD[@]}"
+}
+
 run_agent_harness_init() {
   local HARNESS_CMD=() final=installed
   build_harness_command
   [ "$DRY_RUN" = 1 ] && final=dry-run
-  if run "${HARNESS_CMD[@]}"; then record_step "agent-harness-init" "$final" ""; return 0; fi
+  if run_harness_command; then record_step "agent-harness-init" "$final" ""; return 0; fi
   FAILED_STEPS=$((FAILED_STEPS + 1))
   record_step "agent-harness-init" failed ""
 }

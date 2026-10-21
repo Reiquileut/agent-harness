@@ -15,7 +15,9 @@ task-master-ai e ai-memory (tarball de release do GitHub + sha256 em
 `~/.local/bin`). No fim roda `agent-harness init`; com `--yes` isso significa
 `init -y --defaults` nos três agentes, ou seja, o setup marcado como padrão nos
 catálogos (a integração ai-memory é pulada com aviso se faltar
-`AI_MEMORY_SERVER_URL`, e a do TWG se faltar o CLI `twg`).
+`AI_MEMORY_SERVER_URL`, e a do TWG se faltar o CLI `twg`). Sem `--yes`, abre o menu
+interativo com esse setup já marcado, mesmo pelo `curl | bash` (o bootstrap entrega o
+terminal para o menu; sem terminal, avisa para usar `--yes`).
 
 ## O comando
 

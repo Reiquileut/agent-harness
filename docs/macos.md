@@ -20,6 +20,14 @@ terminal novo. Se o Homebrew já existe mas não está no PATH, o bootstrap o en
 
 ## Fase 1: um comando, sem segredos
 
+Com o menu interativo no fim, já com o seu setup marcado (espaço alterna, Enter instala):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Reiquileut/agent-harness/main/bootstrap/macos.sh | bash
+```
+
+Ou sem perguntar nada, instalando direto o seu setup padrão:
+
 ```bash
 curl -fsSL https://raw.githubusercontent.com/Reiquileut/agent-harness/main/bootstrap/macos.sh | bash -s -- --yes
 ```
@@ -31,9 +39,11 @@ Ele instala o que faltar:
 - ai-memory pelo release oficial, com sha256 conferido pelo `shasum`;
 - o CLI do TWG pelo pacote silencioso da Atlassian, sem login.
 
-Depois roda `agent-harness init -y --defaults` nos três agentes. Isso instala o seu setup
-padrão: MCPs, skills, agentes, plugins, os mods do Claude Code, presets, hooks, status line e
-as skills TWG.
+Depois roda o `agent-harness init`: sem `--yes`, abre o menu; com `--yes`, instala direto
+(`init -y --defaults` nos três agentes). Os dois dão o seu setup padrão: MCPs, skills, agentes,
+plugins, os mods do Claude Code, presets, hooks, status line e as skills TWG. O menu aparece
+mesmo pelo `curl | bash`, porque o bootstrap entrega o terminal para ele; sem terminal (CI,
+cron), ele avisa e você usa o `--yes`.
 
 O ai-memory é pulado com aviso enquanto faltar `AI_MEMORY_SERVER_URL`. Os MCPs que precisam
 de token entram com o nome da variável e passam a funcionar quando você exportar o valor.
