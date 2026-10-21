@@ -7,8 +7,8 @@ import process13 from "process";
 // package.json
 var package_default = {
   name: "@r2t/agent-harness",
-  version: "1.7.0",
-  description: "Dotfiles-for-AI-agents bootstrapper: one command to configure MCPs, skills, plugins, custom agents, settings presets and integrations across Claude Code, Codex, and OpenCode \u2014 with private overlays and a one-command Ubuntu bootstrap.",
+  version: "1.7.1",
+  description: "Dotfiles-for-AI-agents bootstrapper: one command to configure MCPs, skills, plugins, custom agents, settings presets and integrations across Claude Code, Codex, and OpenCode \u2014 with private overlays and one-command Ubuntu and macOS bootstraps.",
   type: "module",
   bin: {
     "agent-harness": "dist/cli.js"

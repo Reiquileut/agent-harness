@@ -9,6 +9,8 @@
 #
 # Usage: bootstrap/macos.sh [--dry-run] [--yes] [--overlay <spec>] [--skip-harness]
 #                           [--harness-src <dir>] [--report <file>] [-h] [-- <init args>]
+# Without --yes the interactive menu opens at the end, your setup already checked (also under
+# `curl … | bash`); --yes installs that setup without asking.
 set -euo pipefail
 
 BOOTSTRAP_SCRIPT_NAME="macos.sh"
