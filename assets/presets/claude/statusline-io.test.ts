@@ -9,7 +9,8 @@
 // Pure ASCII on purpose: the accented letter used as padding is written \u{E9}, never typed as a raw character.
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { copyFile, mkdir, realpath, symlink, writeFile } from 'node:fs/promises';
+import { realpathSync } from 'node:fs';
+import { copyFile, mkdir, symlink, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -150,7 +151,10 @@ test('entry-point guard follows a linked directory to the real script location',
       t.skip('this filesystem cannot link directories');
       return;
     }
-    const realUrl = pathToFileURL(await realpath(path.join(realDirectory, 'statusline.ts'))).href;
+    // The URL Node itself gives import.meta.url: its loader resolves the entry with the JS realpathSync,
+    // which keeps 8.3 short names. The native realpath expands them, so it never matched on the
+    // windows-latest runner, whose TEMP is C:\Users\RUNNER~1\… (fix for the first v1.7.0 CI run, 2026-10-21).
+    const realUrl = pathToFileURL(realpathSync(path.join(realDirectory, 'statusline.ts'))).href;
     assert.equal(isStatusLineEntryPoint(realUrl, path.join(linkedDirectory, 'statusline.ts')), true);
   });
 });
