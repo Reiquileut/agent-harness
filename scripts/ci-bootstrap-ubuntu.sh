@@ -7,31 +7,12 @@ set -uo pipefail
 
 SRC="${SRC:-/src}"
 ART="$SRC/artifacts/e2e"
+BOOT_NAME=ubuntu
 REPORT="$ART/bootstrap-ubuntu.json"
-CHECKS="$ART/bootstrap-ubuntu-checks.json"
 LOG="$ART/bootstrap-ubuntu.log"
-fail=0
-
-mkdir -p "$ART"
-echo '[]' > "$CHECKS"
 export PATH="$HOME/.local/bin:$PATH"
-
-# Append {name, pass} to the checks array (jq exists once the bootstrap's apt step ran).
-record_check() {
-  local tmp="$CHECKS.tmp"
-  jq --arg n "$1" --argjson p "$2" '. + [{name:$n, pass:$p}]' "$CHECKS" > "$tmp" && mv "$tmp" "$CHECKS"
-}
-
-# Same style as scripts/ci-e2e.sh, plus a JSON record per check.
-chk() {
-  local pass=false
-  if eval "$2"; then echo "  PASS  $1"; pass=true; else echo "  FAIL  $1"; fail=1; fi
-  record_check "$1" "$pass"
-}
-
-node_at_least_22_18() {
-  node -e 'const [a,b]=process.versions.node.split(".").map(Number);process.exit(a>22||(a===22&&b>=18)?0:1)'
-}
+# shellcheck source=ci-bootstrap-checks.sh
+. "$SRC/scripts/ci-bootstrap-checks.sh"
 
 # 1) prerequisites only (a fresh box has no node/pnpm yet)
 bash "$SRC/bootstrap/ubuntu.sh" --yes --skip-harness 2>&1 | tee "$LOG"
@@ -55,22 +36,7 @@ hash -r
 
 chk "prerequisites installed (exit 0)"   '[ "$prereq_rc" -eq 0 ]'
 chk "bootstrap + harness exited 0"        '[ "$boot_rc" -eq 0 ]'
-for tool in node pnpm gh uv claude codex ai-memory task-master; do
-  chk "$tool on PATH"                     "command -v $tool"
-done
-chk "node >= 22.18"                       'node_at_least_22_18'
-chk "pnpm is major 10"                    '[ "$(pnpm -v | cut -d. -f1)" = 10 ]'
-chk "report has ok:true"                  'jq -e ".ok == true" "$REPORT" >/dev/null'
-chk "codex config.toml exists"            '[ -f "$HOME/.codex/config.toml" ]'
-chk "claude settings.json exists"         '[ -f "$HOME/.claude/settings.json" ]'
-chk "ai-memory skipped: AI_MEMORY_SERVER_URL unset" 'grep -q "export AI_MEMORY_SERVER_URL in your shell first" "$LOG"'
-chk "opencode on PATH"                    'command -v opencode'
-chk "overlay skill installed for claude"  '[ -f "$HOME/.claude/skills/fixture-private-skill/SKILL.md" ]'
-chk "linux: no Windows-only pencil MCP"   '! grep -q "mcp_servers.pencil" "$HOME/.codex/config.toml"'
-chk "linux: no [windows] codex table"     '! grep -q "^\[windows\]" "$HOME/.codex/config.toml"'
-chk "global CLAUDE.md imports AGENTS.md"  'head -1 "$HOME/.claude/CLAUDE.md" | grep -qF "@~/.codex/AGENTS.md"'
-chk "commit guard hook tests pass on this node" 'node --test "$HOME/.claude/hooks/bloquear-mencao-claude-commit.test.ts" >/dev/null 2>&1'
-chk "statusline renders with python3"     'echo "{}" | bash "$HOME/.claude/statusline-command.sh" | grep -q "ctx"'
-chk "init reported no failed action"      '! sed -n "/dist\/cli.js init/,\$p" "$LOG" | grep -q "✗"'
+check_bootstrap_toolchain
+check_bootstrap_harness_output
 
 exit $fail

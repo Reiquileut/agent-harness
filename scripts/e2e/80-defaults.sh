@@ -34,6 +34,12 @@ HDU="$(fresh_home)"
 AGENT_HARNESS_CATALOG="$DEF_CAT" harness "$HDU" init -y --defaults -a codex --skill anti-ai-slop >/dev/null
 chk "defaults: item flags add to the defaults" '[ -f "$HDU/.agents/skills/anti-ai-slop/SKILL.md" ] && [ -f "$HDU/.agents/skills/prd/SKILL.md" ]'
 
+# An overlay flags its own defaults: the private repo's setup comes with --defaults --overlay.
+HDO="$(fresh_home)"
+AGENT_HARNESS_CATALOG="$DEF_CAT" harness "$HDO" init -y --defaults -a codex --overlay "$E2E_FIXTURES/overlay" >/dev/null
+chk "defaults: an overlay's flagged entry installed"   '[ -f "$HDO/.agents/skills/fixture-private-skill/SKILL.md" ]'
+chk "defaults: an overlay's unflagged entry left out"  '[ -f "$HDO/.codex/config.toml" ] && ! grep -q "fixture-private-mcp" "$HDO/.codex/config.toml"'
+
 # The shipped catalog flags the live setup (2026-10-20) and nothing private.
 chk "defaults: shipped catalog flags the 4 mods" 'node -e "const c=require(\"./assets/catalog.json\");process.exit(c.plugins.filter((p)=>p.default&&p.id.startsWith(\"mod-\")).length===4?0:1)"'
 chk "defaults: shipped presets and integrations flagged" 'node -e "const c=require(\"./assets/catalog.json\");const off=[...c.presets,...c.integrations].filter((e)=>!e.default).map((e)=>e.id);process.exit(off.length===0?0:1)"'
