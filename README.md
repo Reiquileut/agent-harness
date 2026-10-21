@@ -66,12 +66,18 @@ npx github:reiquileut/agent-harness init -y --defaults -a claude-code -a codex \
 ```
 
 ```bash
-# Fresh Ubuntu box: installs Node, Claude Code, Codex, OpenCode, ai-memory…, then runs init --defaults
+# Fresh Mac with Homebrew: installs Node, Claude Code, Codex, OpenCode, ai-memory, TWG…, then init --defaults
+curl -fsSL https://raw.githubusercontent.com/Reiquileut/agent-harness/main/bootstrap/macos.sh | bash -s -- --yes
+
+# Fresh Ubuntu box: the same through apt, NodeSource and the official installers
 curl -fsSL https://raw.githubusercontent.com/Reiquileut/agent-harness/main/bootstrap/ubuntu.sh | bash -s -- --yes
 
 # add your private overlay (dir or git URL — see "Private overlays")
 npx github:reiquileut/agent-harness --overlay git@github.com:you/private-overlay.git
 ```
+
+Neither bootstrap asks for a secret: it installs everything, then prints the logins and tokens
+to set afterwards, with one re-run (`init -y --defaults --overlay …`) that adds what waited for them.
 
 > **Needs:** Node ≥ 22 (≥ 22.18 for the hooks, mods and status line), `git`, and internet. The
 > repo is public (no login) and ships a committed `dist/`, so **nothing builds at install time**.
@@ -244,7 +250,9 @@ Works on **any machine** — Linux, macOS, or Windows — that has **Node ≥ 22
 (**≥ 22.18** for the hooks, the mods and the status line, which are TypeScript run natively),
 **git** (used to fetch from GitHub), and **internet**. On a bare Ubuntu box,
 [`bootstrap/ubuntu.sh`](bootstrap/ubuntu.sh) installs all of that and the agents
-(see [docs/linux.md](docs/linux.md)).
+(see [docs/linux.md](docs/linux.md)); on a Mac with Homebrew, [`bootstrap/macos.sh`](bootstrap/macos.sh)
+does (see [docs/macos.md](docs/macos.md)). Both are generated from `bootstrap/src/`
+(`pnpm build:bootstrap`), so each stays one self-contained file for `curl | bash`.
 
 Without the agents installed it still opens the menu, runs `scaffold`, writes Codex/OpenCode configs
 (plain file merges), copies local skills and applies presets. Only Claude Code's MCP/plugin steps need the
@@ -414,19 +422,23 @@ pnpm guard                        # privacy guard
 ```
 
 `scripts/ci-e2e.sh` runs every `scripts/e2e/[0-9]*.sh` suite (`10-init`, `15-claude-cli`, `20-scaffold`,
-`30-platform`, `40-overlay`, `50-integrations`, `60-guard`, `70-bootstrap`, `80-defaults`, `82-mods`,
-`84-hooks`, `86-global-rules`, `88-twg`, `89-statusline`) and writes **`artifacts/e2e/report.json`**;
-pass/fail is its `failed` count. Fakes for the agent CLIs (`claude`, `ai-memory`, `twg`) live in
-`test/fixtures/bin/` and log their argv, so no real agent or account is touched. CI runs a
-Linux/Windows/macOS × Node 22/24 matrix plus the `bootstrap-ubuntu` job (clean `ubuntu:24.04`
-container, artifact `artifacts/e2e/bootstrap-ubuntu.json`).
+`30-platform`, `40-overlay`, `50-integrations`, `60-guard`, `70-bootstrap`, `71-bootstrap-build`,
+`72-bootstrap-macos`, `80-defaults`, `82-mods`, `84-hooks`, `86-global-rules`, `88-twg`, `89-statusline`)
+and writes **`artifacts/e2e/report.json`**; pass/fail is its `failed` count. Fakes for the agent CLIs
+(`claude`, `ai-memory`, `twg`) live in `test/fixtures/bin/`, and the Mac stand-ins (`uname`, `brew`,
+plus `curl`/`npm` that refuse to download) in `test/fixtures/bootstrap-macos/`, so no real agent,
+account or installer is touched. CI runs a Linux/Windows/macOS × Node 22/24 matrix plus two real
+bootstrap runs: `bootstrap-ubuntu` (clean `ubuntu:24.04` container) and `bootstrap-macos` (macOS
+runner, stock bash 3.2), artifacts `artifacts/e2e/bootstrap-<os>.json`.
 
 ---
 
 ## Docs
 
 [docs/workflow.md](docs/workflow.md) (how we work: AGENTS.md, the default setup, hooks/mods/status line,
-testing, model routing, ai-memory, Git, public vs. private) · [docs/linux.md](docs/linux.md) (new Ubuntu machine runbook) — both in PT-BR · [docs/catalog.md](docs/catalog.md) (catalog format and the shipped list).
+testing, model routing, ai-memory, Git, public vs. private) · [docs/linux.md](docs/linux.md) (new Ubuntu machine
+runbook) · [docs/macos.md](docs/macos.md) (new Mac runbook) — all three in PT-BR ·
+[docs/catalog.md](docs/catalog.md) (catalog format and the shipped list).
 
 ---
 

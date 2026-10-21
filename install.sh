@@ -14,14 +14,15 @@ set -euo pipefail
 REPO="github:reiquileut/agent-harness"
 # Command (default init) + every remaining arg is forwarded, so
 #   curl -fsSL <url> | bash -s -- init --overlay <git-url> -a codex
-# works. On a fresh Ubuntu box use bootstrap/ubuntu.sh instead (installs Node etc.).
+# works. On a fresh Ubuntu box or Mac use bootstrap/ubuntu.sh or bootstrap/macos.sh instead
+# (they install Node and the agents first).
 CMD="${1:-init}"
 [ $# -gt 0 ] && shift
 
 has() { command -v "$1" >/dev/null 2>&1; }
 
 if ! has node; then
-  echo "agent-harness: Node >= 22 is required. Install it from https://nodejs.org (Ubuntu: bootstrap/ubuntu.sh) and re-run." >&2
+  echo "agent-harness: Node >= 22 is required. Install it from https://nodejs.org (Ubuntu: bootstrap/ubuntu.sh, Mac: bootstrap/macos.sh) and re-run." >&2
   exit 1
 fi
 

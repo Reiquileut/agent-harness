@@ -55,6 +55,10 @@ O template carrega o padrão. Destaques:
   do dia a dia: o menu já abre com elas marcadas (Enter instala) e
   `init -y --defaults` instala só elas, mais o que as flags de item somarem.
 - `-y` sem `--defaults` continua instalando só o que as flags pedem (como na v1.6).
+- Máquina zerada: `bootstrap/macos.sh` ou `bootstrap/ubuntu.sh` com `--yes` instalam os
+  pré-requisitos e rodam o `init -y --defaults`, **sem pedir segredo**. Logins, o servidor do
+  ai-memory e os tokens vêm depois; um novo `init -y --defaults --overlay …` acrescenta o que
+  esperava por eles ([docs/macos.md](macos.md), [docs/linux.md](linux.md)).
 - Ao adotar algo novo numa máquina, traga para o catálogo com `default: true`; o que
   for arriscado (MCP que escreve numa conta paga) fica sem a marca.
 

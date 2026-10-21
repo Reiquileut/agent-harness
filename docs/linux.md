@@ -85,15 +85,20 @@ O harness nunca automatiza login. Rode uma vez cada:
 
 MCPs com OAuth autenticam no primeiro uso.
 
-## Rodar de novo para o ai-memory
+## Fase 2: segredos, overlay e ai-memory
 
-Depois de exportar as variáveis:
+O bootstrap instala tudo sem pedir nenhum segredo. Depois, quando quiser, exporte as
+variáveis e rode o `init` de novo: ele é idempotente e só acrescenta o que faltava
+(o overlay privado e as integrações que esperavam um segredo).
 
 ```bash
-npx -y github:reiquileut/agent-harness init -y --integration ai-memory \
-  -a claude-code -a codex -a opencode
+npx -y github:reiquileut/agent-harness init -y --defaults \
+  -a claude-code -a codex -a opencode --overlay github:OWNER/REPO-PRIVADO
 ai-memory doctor
 ```
+
+Sem overlay, tire o `--overlay`. Só o ai-memory:
+`init -y --integration ai-memory -a claude-code -a codex -a opencode`.
 
 A integração roda `install-mcp` e `install-hooks` por agente, e uma vez
 `install-instructions --target ~/.codex/AGENTS.md`. Também mescla
@@ -101,8 +106,11 @@ A integração roda `install-mcp` e `install-hooks` por agente, e uma vez
 no Codex, instala o hook SessionStart da leitura inicial do ai-memory
 (`~/.codex/hooks/ai-memory-startup.ts` + entrada em `~/.codex/hooks.json`).
 
-As skills TWG (Atlassian) dependem do seu CLI `twg`: instale-o, rode `twg setup`
-uma vez e depois `init -y --integration twg-skills -a claude-code -a codex`.
+As skills TWG (Atlassian) dependem do CLI `twg`. No Linux o instalador da Atlassian já
+faz o login enquanto instala, por isso ele fica para a fase 2:
+`curl -fsSL --retry 2 https://teamwork-graph.atlassian.com/cli/install | bash` e depois
+`init -y --integration twg-skills -a claude-code -a codex`. No macOS o bootstrap instala o
+CLI sem login (ver [docs/macos.md](macos.md)).
 
 ## Checklist de verificação
 

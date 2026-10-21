@@ -22,6 +22,7 @@ var package_default = {
   },
   scripts: {
     build: "tsup",
+    "build:bootstrap": "node scripts/build-bootstrap.mjs",
     dev: "tsup --watch",
     typecheck: "tsc",
     test: "bash scripts/ci-e2e.sh",

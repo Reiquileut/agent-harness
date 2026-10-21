@@ -12,6 +12,10 @@ repositório está em `.ai-memory.toml`.
 - Hooks e status line (`node --test`): `npm run test:hooks`
 - Guarda de privacidade: `npm run guard`
 - Typecheck: `npm run typecheck` · Build (gera `dist/cli.js`, que é versionado): `npm run build`
+- Bootstraps (`bootstrap/ubuntu.sh`, `bootstrap/macos.sh`): são GERADOS de `bootstrap/src/`
+  (o `common.sh` vai inlinado em cada um, porque `curl | bash` baixa um arquivo só). Edite
+  `bootstrap/src/` e rode `npm run build:bootstrap`; a suíte `71-bootstrap-build` reprova saída velha.
+  O do macOS precisa rodar no bash 3.2: nada de `mapfile`, `declare -A`, `${v,,}`.
 - Smoke sem escrever nada: `node dist/cli.js init --dry-run -y --defaults -a claude-code -a codex -a opencode`
 
 ## Artefatos de teste
