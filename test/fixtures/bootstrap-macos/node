@@ -1,0 +1,7 @@
+#!/bin/sh
+# Stands in for "no Node yet" in scripts/e2e/72-bootstrap-macos.sh: the suite's PATH keeps /usr/bin,
+# and a Linux host (or a Mac with a system Node) has a real node there, so the bare-Mac plan skipped
+# `brew install node` and "macos: Node from Homebrew" failed off CI (found 2026-10-28). Fails like a
+# missing command.
+echo "fake node: not installed on the simulated Mac" >&2
+exit 127

@@ -34,6 +34,9 @@ check_bootstrap_toolchain() {
   done
   chk "node >= 22.18"                       'node_at_least_22_18'
   chk "pnpm is major 10"                    '[ "$(pnpm -v | cut -d. -f1)" = 10 ]'
+  # `ai-memory install-hooks` looks for its script bundle here; without it the Claude/Codex
+  # hooks fail with "could not locate hooks directory" (found on a real Ubuntu setup, 2026-10-28).
+  chk "ai-memory hooks bundle installed"    '[ -f "$HOME/.local/share/ai-memory/hooks/claude-code/session-start.sh" ] && [ -d "$HOME/.local/share/ai-memory/hooks/codex" ]'
   chk "report has ok:true"                  'jq -e ".ok == true" "$REPORT" >/dev/null'
 }
 

@@ -21,7 +21,7 @@ MAC_WITH_BREW="$(mktemp -d)"; MAC_NO_BREW="$(mktemp -d)"; MAC_EMPTY_PREFIX="$(mk
 # A fresh HOME too: the script puts ~/.local/bin on PATH, where this machine may already have claude.
 MAC_HOME="$(mktemp -d)"
 cp "$E2E_FIXTURES/bootstrap-macos/"* "$MAC_WITH_BREW/"
-cp "$E2E_FIXTURES/bootstrap-macos/uname" "$E2E_FIXTURES/bootstrap-macos/curl" "$E2E_FIXTURES/bootstrap-macos/npm" "$MAC_NO_BREW/"
+cp "$E2E_FIXTURES/bootstrap-macos/uname" "$E2E_FIXTURES/bootstrap-macos/curl" "$E2E_FIXTURES/bootstrap-macos/npm" "$E2E_FIXTURES/bootstrap-macos/node" "$MAC_NO_BREW/"
 chmod +x "$MAC_WITH_BREW/"* "$MAC_NO_BREW/"*
 # mac_boot <fake-bin-dir> <args…>: run the script as a bare Mac would, all output plus "exit=<code>".
 mac_boot() {

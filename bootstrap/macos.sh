@@ -40,6 +40,8 @@ NODE_MIN_VERSION="22.18.0" # hooks, mods and the status line run .ts files with 
 PNPM_SPEC="pnpm@10"
 AI_MEMORY_BASE="https://github.com/akitaonrails/ai-memory/releases/latest/download"
 LOCAL_BIN="$HOME/.local/bin"
+# One of the paths `ai-memory install-hooks` searches for its hook-script bundle (v3.2.9).
+AI_MEMORY_SHARE_DIR="$HOME/.local/share/ai-memory"
 SCRATCH_DIR=""
 # The terminal handed to the interactive menu; BOOTSTRAP_TTY overrides it (the e2e suite uses a file).
 BOOTSTRAP_TTY="${BOOTSTRAP_TTY:-/dev/tty}"
@@ -204,15 +206,36 @@ install_executable() {
 }
 
 # Release assets checked with `gh release view --repo akitaonrails/ai-memory` (v3.1.2), 2026-10-21:
-# ai-memory-<linux|macos>-<x86_64|aarch64>.tar.gz + .sha256; the tarball holds ./ai-memory at its root.
+# ai-memory-<linux|macos>-<x86_64|aarch64>.tar.gz + .sha256; the tarball holds ./ai-memory at its root,
+# next to ./hooks/<agent>/ (checked on v3.2.9, 2026-10-28). The hooks bundle used to be left behind,
+# so `ai-memory install-hooks` failed for claude-code and codex with "could not locate hooks directory".
 install_ai_memory_release() {
   local asset dir="$SCRATCH_DIR"
   asset="ai-memory-$AI_MEMORY_OS_TAG-$(detect_arch_name).tar.gz"
   run curl -fsSL -o "$dir/$asset" "$AI_MEMORY_BASE/$asset" || return 1
   run curl -fsSL -o "$dir/$asset.sha256" "$AI_MEMORY_BASE/$asset.sha256" || return 1
   verify_sha256_matches "$dir/$asset" "$dir/$asset.sha256" || return 1
-  run tar -xzf "$dir/$asset" -C "$dir" ./ai-memory || return 1
-  install_executable "$dir/ai-memory" "$LOCAL_BIN/ai-memory"
+  run tar -xzf "$dir/$asset" -C "$dir" ./ai-memory ./hooks || return 1
+  install_executable "$dir/ai-memory" "$LOCAL_BIN/ai-memory" || return 1
+  install_ai_memory_hooks_bundle "$dir/hooks"
+}
+
+# Replaces the bundle wholesale, so a script dropped upstream does not linger from an older release.
+install_ai_memory_hooks_bundle() {
+  run mkdir -p "$AI_MEMORY_SHARE_DIR" || return 1
+  run rm -rf "$AI_MEMORY_SHARE_DIR/hooks" || return 1
+  run cp -R "$1" "$AI_MEMORY_SHARE_DIR/hooks"
+}
+
+# Binary AND hooks bundle: a machine bootstrapped before the bundle fix gets repaired on re-run.
+# The /usr paths are where a distro package puts the bundle; those installs are left alone.
+ai_memory_installed() {
+  local share
+  command -v ai-memory || return 1
+  for share in "$AI_MEMORY_SHARE_DIR" /usr/local/share/ai-memory /usr/share/ai-memory; do
+    [ -d "$share/hooks/claude-code" ] && return 0
+  done
+  return 1
 }
 
 # The steps both OSes run the same way, after their own package-manager steps.
@@ -222,7 +245,7 @@ install_shared_tools() {
   run_step "codex" "command -v codex" "install_npm_global_package @openai/codex" "codex --version"
   run_step "opencode" "command -v opencode" "install_npm_global_package opencode-ai" "opencode --version"
   run_step "task-master-ai" "command -v task-master" "install_npm_global_package task-master-ai" "task-master --version"
-  run_step "ai-memory" "command -v ai-memory" install_ai_memory_release "ai-memory --version"
+  run_step "ai-memory" ai_memory_installed install_ai_memory_release "ai-memory --version"
 }
 
 # --- agent-harness ----------------------------------------------------------
