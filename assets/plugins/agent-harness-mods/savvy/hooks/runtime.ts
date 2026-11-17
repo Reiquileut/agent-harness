@@ -14,13 +14,15 @@ import { readSavvyEnv, readSavvyRun, updateSavvyBeat, updateSavvyPrefs, updateSa
 export type SavvyRunChange = (run: SavvyRun) => SavvyRun
 
 /** What a per-request hook needs about one of the run's subagents, without a state read. */
-export type SavvyAgentLink = { taskId: number; effort: SavvyEffort }
+export type SavvyAgentLink = { taskId: number; effort: SavvyEffort | null }
 
 /** One Raster the animation loop repaints: its frames are packed at draw time. */
 export type SavvyRasterSlot = { requestId: string; key: string; frames: readonly string[]; divisor: number; lastIndex: number }
 
 export class SavvyRuntime {
   pending: SavvyRunChange[] = []
+  /** When queued changes were last written; events flush on their own once a beat period passed. */
+  lastFlushAt = 0
   timers: Timer[] = []
   frame = 0
   readonly slots = new Map<string, SavvyRasterSlot>()
@@ -57,10 +59,20 @@ export async function flushSavvyRun($: EngineInterface, runtime: SavvyRuntime): 
   if (run !== null) await saveSavvyRun($, run).catch(() => undefined)
 }
 
-/** Queues a change; `urgent` writes now (spawn, end, cancel), else at the next beat. */
+/**
+ * Queues a change; `urgent` writes now (spawn, end, cancel), else at the next beat,
+ * or from this event once a beat period passed since the last write.
+ * Fix 2026-10-21: in a real session the clock.every beat stopped flushing (a refused
+ * period ends the interval), so cards sat at 0 tokens until the next spawn wrote.
+ */
 export async function changeSavvyRun($: EngineInterface, runtime: SavvyRuntime, fn: SavvyRunChange, urgent = false): Promise<void> {
   runtime.pending.push(fn)
-  if (urgent) await flushSavvyRun($, runtime)
+  const now = await $.clock.now()
+  if (!urgent && now - runtime.lastFlushAt < Math.round(1000 / runtime.config.ui.dataFps)) return
+  runtime.lastFlushAt = now
+  await flushSavvyRun($, runtime)
+  // The beat also drives the elapsed-time redraw; with the timer gone, events keep it moving.
+  if (!urgent && (await readSavvyRun($))?.tasks.some(task => task.status === 'running') === true) await updateSavvyBeat($, n => n + 1)
 }
 
 /** Replaces the active run (a new plan); a new run shows again even after `/savvy off`. */
@@ -75,7 +87,7 @@ export async function startSavvyRun($: EngineInterface, runtime: SavvyRuntime, r
 /** Rebuilds the agent index after a reload from the run in `$.state`. */
 export async function restoreSavvyAgents($: EngineInterface, runtime: SavvyRuntime): Promise<void> {
   const run = await readSavvyRun($)
-  for (const task of run?.tasks ?? []) if (task.agentId !== null) runtime.agents.set(task.agentId, { taskId: task.id, effort: task.effort })
+  for (const task of run?.tasks ?? []) if (task.agentId !== null) runtime.agents.set(task.agentId, { taskId: task.id, effort: task.adhoc === true ? null : task.effort })
 }
 
 export function startSavvyTimers($: EngineInterface, runtime: SavvyRuntime): void {

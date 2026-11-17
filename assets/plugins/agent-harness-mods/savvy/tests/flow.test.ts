@@ -2,42 +2,12 @@
 // tool calls -> settle -> ready -> review -> cancel, then every drawing on the
 // terminal and the desktop. Only the engine beneath the plugin is faked.
 import { expect, mock, test } from 'claude-code/testing'
-import type { Engine } from 'claude-code/testing'
 import { installFakeSavvyEngine, installFakeSavvyStep } from './fakeEngine.ts'
+import { SAVVY_TEST_PLAN as PLAN, SAVVY_TEST_STEPS, finishSavvyTestHelper as finish, runSavvyTestHelper as runHelper, savvyTestBand, savvyTestMarkerOf as markerOf, savvyTestPane } from './savvyRunFixture.ts'
 
-const steps = ['Read the code', 'Write the change', 'Run the tests']
-const PLAN = {
-  tool: 'mcp__savvy__plan', tool_use_id: 'plan-1', name: 'auth api', request: 'add auth',
-  tasks: [
-    { title: 'Login endpoint', profile: 'medium', steps },
-    { title: 'Token store', profile: 'heavy', steps },
-    { title: 'Docs', profile: 'light', steps },
-    { title: 'Review', profile: 'careful', steps, deps: [1, 2, 3] },
-  ],
-}
 const SURFACES = ['terminal', 'desktop'] as const
-
-const spawnInput = (prompt: string) => ({
-  tool_use_id: 'agent-call', prompt, description: 'savvy', subagentType: 'general-purpose',
-  provider: { plugin: 'engine', tier: 'core' }, parentModel: 'claude-opus-5-5', background: false, fork: false,
-}) as never
-
-const markerOf = (text: string, task: number) => (text.match(new RegExp(`\\[savvy:run=[^:]+:task=${task}\\]`)) ?? [''])[0]
-
-async function runHelper($: Engine, marker: string, n: number): Promise<string> {
-  const spawned = await $.agent.spawn(spawnInput(`${marker}\nwork`))
-  const agentId = spawned.agentId as string
-  await $.turn.start({ text: '', turnId: `turn-${n}`, agentId })
-  for await (const _ of $.turn.step({ turnId: `turn-${n}`, index: 0, model: 'claude-opus-5-5', messageCount: 1, agentId } as never)) void _
-  await $.tool.call({ tool: 'Write', tool_use_id: `w-${n}`, file_path: `src/f${n}.ts`, content: 'x', agentId } as never)
-  return agentId
-}
-
-const finish = ($: Engine, agentId: string, n: number) =>
-  $.turn.complete({ answer: `STEP 3/3: Run the tests\nSUMMARY:\nDid task ${n}.`, durationMs: 10, isAborted: false, turnId: `turn-${n}`, agentId, reason: 'answer' } as never)
-
-const PANE = { plugin: 'savvy', component: 'Pane', requestId: 'savvy-agents', props: { title: 'Agents', isFocused: false, bodyColumns: 72, placement: 'dock', scroll: { offset: 0, bodyRows: 40 }, view: {} } } as const
-const BAND = { plugin: 'savvy', component: 'AbovePrompt', requestId: 'band', props: { hasSurvey: false, isWorking: true, maxRows: 4, bodyColumns: 100, scroll: { offset: 0, bodyRows: 4 }, view: {} } } as const
+const PANE = savvyTestPane(72)
+const BAND = savvyTestBand(100)
 
 test('a run from plan to review, drawn on both surfaces', async ($, on) => {
   const clock = mock.clock(on)
@@ -128,6 +98,6 @@ test('a malformed plan is refused with the offending value', async ($, on) => {
   mock.clock(on)
   installFakeSavvyEngine(on, 'desktop')
   await $.session.start({ cwd: '/proj', surface: 'desktop', isInteractive: true })
-  const refused = await $.tool.call({ ...PLAN, tasks: [{ title: 'x', profile: 'turbo', steps }] } as never)
+  const refused = await $.tool.call({ ...PLAN, tasks: [{ title: 'x', profile: 'turbo', steps: SAVVY_TEST_STEPS }] } as never)
   expect(String(refused.deny)).toMatch(/"turbo"/)
 })

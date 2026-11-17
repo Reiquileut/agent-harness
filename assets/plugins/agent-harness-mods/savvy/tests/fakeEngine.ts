@@ -17,7 +17,8 @@ const usage = { input_tokens: 1200, output_tokens: 3000, cache_read_input_tokens
 export const FAKE_SAVVY_USAGE = usage
 
 /** Installs the stand-ins and answers what the plugin asks of the engine. */
-export function installFakeSavvyEngine(on: On, surface: RenderSurface): FakeSavvyRecord {
+/** `spawnsAgents: false` answers every spawn without starting an agent (no agentId). */
+export function installFakeSavvyEngine(on: On, surface: RenderSurface, spawnsAgents = true): FakeSavvyRecord {
   const record: FakeSavvyRecord = { files: new Map(), spawns: [], aborted: [], opened: [], blits: 0 }
   let agents = 0
   on('session.start', (_, e) => ({ cwd: e.cwd }))
@@ -38,7 +39,7 @@ export function installFakeSavvyEngine(on: On, surface: RenderSurface): FakeSavv
   on('ui.blit', () => (record.blits++, { value: {} }))
   on('ui.toast', () => ({ value: undefined }))
   on('turn.abort', (_, e) => (record.aborted.push(e.turnId), { value: undefined }))
-  on('agent.spawn', (_, e) => (record.spawns.push({ model: e.model, background: e.background }), { model: e.model ?? 'x', agentId: `agent-${++agents}` }))
+  on('agent.spawn', (_, e) => (record.spawns.push({ model: e.model, background: e.background }), spawnsAgents ? { model: e.model ?? 'x', agentId: `agent-${++agents}` } : { model: e.model ?? 'x' }))
   on('tool.call', () => ({ result: {} as never }))
   on('turn.start', (_, e) => ({ turnId: e.turnId }))
   on('turn.complete', (_, e) => ({ text: e.answer }))

@@ -39,6 +39,8 @@ export type SavvyTask = {
   turnId: string | null
   toolCalls: SavvyToolCall[]
   files: string[]
+  /** True for an Agent call savvy did not plan: the card observes it and enforces nothing. */
+  adhoc?: boolean
 }
 
 export type SavvyRun = {

@@ -2,21 +2,53 @@
 // terminal, with SVG mascots, rounded bars and a pulsing running indicator.
 import { savvyNode as n, isSavvyMotionOn, type SavvyDrawContext } from './context.ts'
 import type { SavvyCardView, SavvySectionView } from './viewModel.ts'
-import { savvyBarSvg, savvyMascotSvg, savvyPulseSvg, savvySpinnerSvg, savvyStatusSvg } from './svg.ts'
+import { SAVVY_BAR_HEIGHT_PX, SAVVY_ICON_PX, savvyBarSvg, savvyMascotSvg, savvyPulseSvg, savvySpinnerSvg, savvyStatusSvg } from './svg.ts'
 
+// The app measures `bodyColumns` as the box's CSS px over its cell width. That width
+// is not exposed, so 7 is an estimate on the low side; where it is still too high,
+// the app's own `max-width:100%` on every Svg keeps a bar inside its box.
 const PX_PER_COLUMN = 7
 const MASCOT_PX = 32
+const BAND_MASCOT_PX = 18
+/** What a card's bar cannot use: the pane's padding, the card's border and padding, the mascot and its gap. */
+const CARD_CHROME_PX = MASCOT_PX + 56
+const CARD_BAR_PX = { min: 64, max: 520 } as const
+const BAND_BAR_PX = { min: 40, max: 140 } as const
+/** The band's bar takes a fifth of the band, so the name, the counts and the time keep theirs. */
+const BAND_BAR_SHARE = 0.2
 
-const pxFor = (ctx: SavvyDrawContext, columns: number, min: number, max: number): number =>
-  Math.round(Math.min(max, Math.max(min, columns * PX_PER_COLUMN)))
+type SavvySvgBox = { width: number; height: number }
+type SavvyPxRange = { min: number; max: number }
 
-function svgNode(ctx: SavvyDrawContext, source: string, alt: string, animated: boolean): unknown {
-  return n(ctx, 'Svg', { source, alt, ...(animated && isSavvyMotionOn(ctx) ? { isInteractive: true } : {}) })
+const squareBox = (px: number): SavvySvgBox => ({ width: px, height: px })
+const ICON_BOX = squareBox(SAVVY_ICON_PX)
+
+/** `px` rounded into `range`; a width that is not a number takes the minimum. */
+const clampPx = (px: number, range: SavvyPxRange): number =>
+  Math.round(Math.min(range.max, Math.max(range.min, Number.isFinite(px) ? px : range.min)))
+
+/**
+ * One Svg, ALWAYS with `width` and `height`. Fix 2026-11-17: the desktop app sizes
+ * the element from these two props alone (`width:…px;height:…px;max-width:100%`),
+ * and an `isInteractive` one is an iframe, which without them is the browser's
+ * default 300x150: every running card's mascot, bar and spinner came out huge
+ * and the band was cut. The markup's own width/height only size the plain image.
+ */
+function svgNode(ctx: SavvyDrawContext, source: string, alt: string, box: SavvySvgBox, animated: boolean): unknown {
+  return n(ctx, 'Svg', { source, alt, width: box.width, height: box.height, ...(animated && isSavvyMotionOn(ctx) ? { isInteractive: true } : {}) })
+}
+
+type SavvyBarNode = { width: number; fraction: number; color: string; alt: string; animated: boolean }
+
+function barNode(ctx: SavvyDrawContext, bar: SavvyBarNode): unknown {
+  const animated = bar.animated && isSavvyMotionOn(ctx)
+  const source = savvyBarSvg({ width: bar.width, fraction: bar.fraction, color: bar.color, track: ctx.palette.track, animated })
+  return svgNode(ctx, source, bar.alt, { width: bar.width, height: SAVVY_BAR_HEIGHT_PX }, bar.animated)
 }
 
 function statusNode(ctx: SavvyDrawContext, card: SavvyCardView): unknown {
-  if (card.status === 'running') return svgNode(ctx, savvySpinnerSvg(ctx.palette[card.profile], ctx.palette.track, isSavvyMotionOn(ctx)), 'running', true)
-  return svgNode(ctx, savvyStatusSvg(card.status, ctx.palette), card.status, false)
+  if (card.status === 'running') return svgNode(ctx, savvySpinnerSvg(ctx.palette[card.profile], ctx.palette.track, isSavvyMotionOn(ctx)), 'running', ICON_BOX, true)
+  return svgNode(ctx, savvyStatusSvg(card.status, ctx.palette), card.status, ICON_BOX, false)
 }
 
 function totalsCard(ctx: SavvyDrawContext, label: string, value: string): unknown {
@@ -27,9 +59,9 @@ function totalsCard(ctx: SavvyDrawContext, label: string, value: string): unknow
 
 function header(ctx: SavvyDrawContext): unknown {
   const { done, total, pct } = ctx.view.progress
-  return n(ctx, 'Box', { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  return n(ctx, 'Box', { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 'sm' },
     n(ctx, 'Box', { flexDirection: 'row', gap: 'xs', alignItems: 'center' },
-      svgNode(ctx, savvyPulseSvg(ctx.view.isActive ? ctx.palette.success : ctx.palette.dim, ctx.view.isActive && isSavvyMotionOn(ctx)), 'run status', ctx.view.isActive),
+      svgNode(ctx, savvyPulseSvg(ctx.view.isActive ? ctx.palette.success : ctx.palette.dim, ctx.view.isActive && isSavvyMotionOn(ctx)), 'run status', ICON_BOX, ctx.view.isActive),
       n(ctx, 'Text', { size: 'title', weight: 'semibold' }, ctx.view.name)),
     n(ctx, 'Text', { size: 'footnote', dimColor: true, tabular: true }, ctx.view.cancelled ? 'cancelled' : `${done}/${total} · ${pct}%`))
 }
@@ -39,19 +71,15 @@ function cardBody(ctx: SavvyDrawContext, card: SavvyCardView): unknown[] {
   const title = n(ctx, 'Button', { key: `card-${card.id}`, plain: true, onPress: () => ctx.handlers.toggleCard(card.id) },
     n(ctx, 'Text', { weight: 'semibold', color: card.status === 'running' ? color : undefined }, card.title))
   const progress = card.status === 'planned' && card.waitingText !== '' ? `◷ ${card.waitingText}` : card.stepText
-  // The bar sits alone on its row: an Svg with no width prop shrinks to the slot.
+  const barWidth = clampPx(ctx.columns * PX_PER_COLUMN - CARD_CHROME_PX, CARD_BAR_PX)
+  // The title shares its row with the status mark only: beside the padded metrics
+  // (28 mono characters) a narrow pane left it a few characters wide (2026-11-17).
   return [
-    n(ctx, 'Box', { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 'sm' },
-      title,
-      n(ctx, 'Box', { flexDirection: 'row', gap: 'xs', alignItems: 'center' },
-        n(ctx, 'Text', { size: 'caption', dimColor: true, tabular: true, mono: true }, card.metricsText), statusNode(ctx, card))),
+    n(ctx, 'Box', { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: 'sm' }, title, statusNode(ctx, card)),
     n(ctx, 'Text', { size: 'footnote' }, n(ctx, 'Text', { color, weight: 'medium' }, card.profile), n(ctx, 'Text', { dimColor: true }, ` ${card.metaText}`)),
     n(ctx, 'Text', { size: 'footnote', dimColor: true }, progress),
-    n(ctx, 'Svg', {
-      source: savvyBarSvg({ width: pxFor(ctx, ctx.columns, 160, 520), fraction: card.fraction, color, track: ctx.palette.track, animated: card.status === 'running' && isSavvyMotionOn(ctx) }),
-      alt: `${Math.round(card.fraction * 100)}% of the steps`,
-      ...(card.status === 'running' && isSavvyMotionOn(ctx) ? { isInteractive: true } : {}),
-    }),
+    barNode(ctx, { width: barWidth, fraction: card.fraction, color, alt: `${Math.round(card.fraction * 100)}% of the steps`, animated: card.status === 'running' }),
+    n(ctx, 'Text', { size: 'caption', dimColor: true, tabular: true, mono: true }, card.metricsText),
   ]
 }
 
@@ -70,7 +98,7 @@ function expanded(ctx: SavvyDrawContext, card: SavvyCardView): unknown {
 }
 
 function agentCard(ctx: SavvyDrawContext, card: SavvyCardView): unknown {
-  const mascot = svgNode(ctx, savvyMascotSvg({ profile: card.profile, palette: ctx.palette, px: MASCOT_PX, animated: card.status === 'running' && isSavvyMotionOn(ctx) }), `${card.profile} helper`, card.status === 'running')
+  const mascot = svgNode(ctx, savvyMascotSvg({ profile: card.profile, palette: ctx.palette, px: MASCOT_PX, animated: card.status === 'running' && isSavvyMotionOn(ctx) }), `${card.profile} helper`, squareBox(MASCOT_PX), card.status === 'running')
   return n(ctx, 'Box', { flexDirection: 'column', gap: 'xs', borderStyle: 'round', borderColor: ctx.palette.border, padding: 'sm' },
     n(ctx, 'Box', { flexDirection: 'row', gap: 'sm' }, mascot, n(ctx, 'Box', { flexDirection: 'column', flexGrow: 1, gap: 'xs' }, ...cardBody(ctx, card))),
     card.expanded ? expanded(ctx, card) : null)
@@ -103,14 +131,15 @@ export function savvyDesktopBand(ctx: SavvyDrawContext): unknown {
   const { done, total, pct } = ctx.view.progress
   const profile = ctx.view.sections.find(s => s.status === 'running')?.cards[0]?.profile ?? ctx.view.profiles[0] ?? 'medium'
   const motion = ctx.view.isActive && isSavvyMotionOn(ctx)
+  const barWidth = clampPx(ctx.columns * PX_PER_COLUMN * BAND_BAR_SHARE, BAND_BAR_PX)
   return n(ctx, 'Box', { flexDirection: 'row', gap: 'sm', alignItems: 'center' },
-    svgNode(ctx, savvyPulseSvg(ctx.view.isActive ? ctx.palette.success : ctx.palette.dim, motion), 'status', ctx.view.isActive),
+    svgNode(ctx, savvyPulseSvg(ctx.view.isActive ? ctx.palette.success : ctx.palette.dim, motion), 'status', ICON_BOX, ctx.view.isActive),
     n(ctx, 'Button', { key: 'open-panel', plain: true, onPress: () => ctx.handlers.openPanel() }, n(ctx, 'Text', { weight: 'semibold' }, ctx.view.name)),
-    svgNode(ctx, savvyBarSvg({ width: 140, fraction: pct / 100, color: ctx.palette[profile], track: ctx.palette.track, animated: motion }), `${pct}%`, ctx.view.isActive),
+    barNode(ctx, { width: barWidth, fraction: pct / 100, color: ctx.palette[profile], alt: `${pct}%`, animated: ctx.view.isActive }),
     n(ctx, 'Text', { tabular: true }, `${done}/${total}`, n(ctx, 'Text', { dimColor: true }, ` · ${pct}%`)),
-    svgNode(ctx, savvyMascotSvg({ profile, palette: ctx.palette, px: 18, animated: false }), 'helper', false),
+    svgNode(ctx, savvyMascotSvg({ profile, palette: ctx.palette, px: BAND_MASCOT_PX, animated: false }), 'helper', squareBox(BAND_MASCOT_PX), false),
     n(ctx, 'Text', { dimColor: true }, `×${total}`),
-    ctx.view.isActive ? svgNode(ctx, savvySpinnerSvg(ctx.palette.text, ctx.palette.track, motion), 'working', true) : null,
+    ctx.view.isActive ? svgNode(ctx, savvySpinnerSvg(ctx.palette.text, ctx.palette.track, motion), 'working', ICON_BOX, true) : null,
     n(ctx, 'Text', { tabular: true }, ctx.view.totals.time),
     n(ctx, 'Button', { key: 'cancel', plain: true, label: '✕', onPress: () => ctx.handlers.askCancel() }))
 }
