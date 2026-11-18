@@ -25,7 +25,7 @@
     {
       "name": "savvy",
       "source": "./savvy",
-      "description": "/savvy-flow divide o pedido em 3-6 helpers em background + revisor; savvy-progress mostra barra, painel Agents e árvore na conversa (desktop e terminal)."
+      "description": "Todo agente ganha um cartão (os sem plano em \"Agentes avulsos\"); /savvy-flow divide o pedido em 3-6 helpers em background + revisor; savvy-progress mostra barra, painel Agents e árvore na conversa (desktop e terminal)."
     }
   ]
 }

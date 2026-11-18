@@ -5,6 +5,13 @@ import type { SavvyProfile } from '../../types'
 import type { SavvyPaletteTokens } from '../core/config.ts'
 import { savvySpritePixels } from './sprites.ts'
 
+/** The side of the pulse, the spinner and the status marks, in CSS px. */
+export const SAVVY_ICON_PX = 14
+/** How tall a bar is unless its spec says otherwise, in CSS px. */
+export const SAVVY_BAR_HEIGHT_PX = 6
+
+const ICON_VIEW = `width="${SAVVY_ICON_PX}" height="${SAVVY_ICON_PX}" viewBox="0 0 14 14"`
+
 const svg = (w: number, h: number, viewBox: string, body: string): string =>
   `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="${viewBox}" shape-rendering="crispEdges">${body}</svg>`
 
@@ -42,7 +49,7 @@ export type SavvyBarSvg = { width: number; fraction: number; color: string; trac
 
 /** A rounded bar; a soft highlight sweeps across the fill while animated. */
 export function savvyBarSvg(spec: SavvyBarSvg): string {
-  const h = spec.height ?? 6
+  const h = spec.height ?? SAVVY_BAR_HEIGHT_PX
   const r = h / 2
   const fill = Math.max(0, Math.min(1, Number.isFinite(spec.fraction) ? spec.fraction : 0)) * spec.width
   const shine = spec.animated && fill > 0
@@ -58,13 +65,13 @@ export function savvyPulseSvg(color: string, animated: boolean): string {
   const halo = animated
     ? `<circle cx="7" cy="7" r="4" fill="${color}" opacity="0.35"><animate attributeName="r" values="3.5;6.5;3.5" dur="1.6s" repeatCount="indefinite"/><animate attributeName="opacity" values="0.45;0;0.45" dur="1.6s" repeatCount="indefinite"/></circle>`
     : ''
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 14 14">${halo}<circle cx="7" cy="7" r="3.5" fill="${color}"/></svg>`
+  return `<svg xmlns="http://www.w3.org/2000/svg" ${ICON_VIEW}>${halo}<circle cx="7" cy="7" r="3.5" fill="${color}"/></svg>`
 }
 
 /** A small rotating arc, the desktop's spinner. */
 export function savvySpinnerSvg(color: string, track: string, animated: boolean): string {
   const spin = animated ? '<animateTransform attributeName="transform" type="rotate" from="0 7 7" to="360 7 7" dur="0.9s" repeatCount="indefinite"/>' : ''
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 14 14"><circle cx="7" cy="7" r="5" fill="none" stroke="${track}" stroke-width="2"/><path d="M7 2 a5 5 0 0 1 5 5" fill="none" stroke="${color}" stroke-width="2" stroke-linecap="round">${spin}</path></svg>`
+  return `<svg xmlns="http://www.w3.org/2000/svg" ${ICON_VIEW}><circle cx="7" cy="7" r="5" fill="none" stroke="${track}" stroke-width="2"/><path d="M7 2 a5 5 0 0 1 5 5" fill="none" stroke="${color}" stroke-width="2" stroke-linecap="round">${spin}</path></svg>`
 }
 
 /** Status glyphs as tiny SVGs so they keep their colour in any theme. */
@@ -74,5 +81,5 @@ export function savvyStatusSvg(kind: 'finished' | 'failed' | 'planned', palette:
     failed: `<path d="M4 4l6 6M10 4l-6 6" stroke="${palette.error}" stroke-width="2" stroke-linecap="round"/>`,
     planned: `<circle cx="7" cy="7" r="5" fill="none" stroke="${palette.dim}" stroke-width="1.5"/><path d="M7 4v3l2 1.5" fill="none" stroke="${palette.dim}" stroke-width="1.5" stroke-linecap="round"/>`,
   }
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 14 14">${paths[kind]}</svg>`
+  return `<svg xmlns="http://www.w3.org/2000/svg" ${ICON_VIEW}>${paths[kind]}</svg>`
 }

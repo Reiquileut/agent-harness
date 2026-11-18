@@ -53,7 +53,7 @@ export async function registerSavvyTools($: EngineInterface): Promise<void> {
 }
 
 /** Opens the panel unasked only where it becomes a sidebar (desktop, or a wide fullscreen terminal). */
-async function openPanelIfDocked(slot: SavvyRuntimeSlot, $: EngineInterface): Promise<void> {
+export async function openPanelIfDocked(slot: SavvyRuntimeSlot, $: EngineInterface): Promise<void> {
   const runtime = slot.current
   const surface = await $.session.surface().catch(() => null)
   const viewport = runtime?.viewport
